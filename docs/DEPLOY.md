@@ -20,10 +20,10 @@ gaps, and offers to delete the stale `data/wrf/t2/` duplicate from the earlier
 mis-nested export.
 
 ## 2 · Create an EMPTY repo on GitHub
-Public, named `nagpur-duct`, **no** README/licence/gitignore (the repo already
+Public, named `urban-climate`, **no** README/licence/gitignore (the repo already
 has them). Then:
 ```bash
-git remote add origin https://github.com/<you>/nagpur-duct.git
+git remote add origin https://github.com/<you>/urban-climate.git
 git push -u origin main
 ```
 
@@ -41,7 +41,7 @@ excluded even if a checkout contains them. Published payload is ~87 MB, well
 under the 1 GB site limit and the 100 MB per-file limit.
 
 ## Live URL
-`https://<you>.github.io/nagpur-duct/` — appears in the Actions run summary and
+`https://<you>.github.io/urban-climate/` — appears in the Actions run summary and
 under Settings → Pages once the first deploy is green. Range requests (which
 PMTiles needs) work on Pages natively, so the buildings layer loads the same way
 it does under `scripts/serve.py` locally.

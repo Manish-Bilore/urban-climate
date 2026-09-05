@@ -10,10 +10,10 @@ on **GitHub Pages**. No backend, no map token, no build step.
 ---
 
 Explore the architecture 
-https://manish-bilore.github.io/nagpur-duct/architecture/
+https://manish-bilore.github.io/urban-climate/architecture/
 
 Explore the Nagpur DUCT
-https://manish-bilore.github.io/nagpur-duct/
+https://manish-bilore.github.io/urban-climate/
 
 ## Quick start (local preview)
 
@@ -23,7 +23,7 @@ requests, and PMTiles reads the buildings archive in byte slices, so every tile
 fetch would pull the whole ~90 MB file.
 
 ```bash
-cd nagpur-duct
+cd urban-climate
 python3 scripts/serve.py          # → http://localhost:8000
 python3 scripts/serve.py 8080     # custom port
 ```

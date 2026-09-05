@@ -15,7 +15,7 @@ Use `scripts/serve.py`, not `python3 -m http.server` — the stock server ignore
 HTTP Range requests and PMTiles needs them.
 
 ```bash
-unzip nagpur-duct.zip && cd nagpur-duct
+unzip urban-climate.zip && cd urban-climate
 python3 scripts/serve.py           # → http://localhost:8000
 ```
 You should see the positron basemap + the dashed city outline. If that renders,
@@ -26,12 +26,12 @@ Shake out Pages/Actions before any data is involved.
 ```bash
 git init && git add -A && git commit -m "DUCT scaffold"
 git branch -M main
-git remote add origin https://github.com/<you>/nagpur-duct.git
+git remote add origin https://github.com/<you>/urban-climate.git
 git push -u origin main
 ```
 On GitHub: **Settings → Pages → Source: GitHub Actions**. If the first push ran
 before you set that, re-run it (Actions → Deploy → Run workflow). URL:
-`https://<you>.github.io/nagpur-duct/` — confirm basemap + outline load there too.
+`https://<you>.github.io/urban-climate/` — confirm basemap + outline load there too.
 
 ## 3 · Tooling on the data machine
 ```bash

@@ -88,7 +88,7 @@ echo
 if [ "$COMMIT" = "0" ]; then
   echo "Dry run complete. Re-run with --commit to git init + first commit."
   echo "Then create an EMPTY GitHub repo and:"
-  echo "    git remote add origin https://github.com/<you>/nagpur-duct.git"
+  echo "    git remote add origin https://github.com/<you>/urban-climate.git"
   echo "    git push -u origin main"
   exit 0
 fi
@@ -123,7 +123,7 @@ fi
 git commit -qm "Nagpur DUCT: buildings, LCZ, WRF (T2/RH/wind), stations" && echo "committed."
 echo
 echo "Next:"
-echo "  1. Create an EMPTY public repo on GitHub named nagpur-duct (no README)."
-echo "  2. git remote add origin https://github.com/<you>/nagpur-duct.git"
+echo "  1. Create an EMPTY public repo on GitHub named urban-climate (no README)."
+echo "  2. git remote add origin https://github.com/<you>/urban-climate.git"
 echo "  3. git push -u origin main"
 echo "  4. Settings -> Pages -> Source: GitHub Actions."
