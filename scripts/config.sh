@@ -10,13 +10,17 @@ DATA_DIR="${DUCT_ROOT}/data"
 
 # --- Source data (CHANGE THESE) ---------------------------------------------
 # Building footprints (GBA / Global Building Atlas), GeoPackage with a height field.
-GBA_GPKG="/home/manish-iforest/Desktop/Web_3D_Model/nagpur-duct/data/buildings/nagpur_buildings_typology_all_buildings.gpkg"
+# Source data lives outside the repo: the raw GPKG and WRF output are the
+# inputs the export scripts read, not artefacts they produce. Set SRC_ROOT to
+# wherever yours sits.
+SRC_ROOT="${SRC_ROOT:-$HOME/duct-source}"
+GBA_GPKG="${SRC_ROOT}/buildings/nagpur_buildings_typology_all_buildings.gpkg"
 GBA_LAYER=""                       # leave blank to use the first layer; set if multiple
 HEIGHT_FIELD="height"              # verify with:  ogrinfo -so "$GBA_GPKG" <layer>
 ID_FIELD="id"             # set to "" if absent
 
 # WRF output (innermost domain d03) covering the 96 h window.
-WRF_DIR="/home/manish-iforest/Desktop/Web_3D_Model/nagpur-duct/data/wrf/apr2025_96h/wrf_lcz_slucm_v4_96h"
+WRF_DIR="${SRC_ROOT}/wrf/apr2025_96h/wrf_lcz_slucm_v4_96h"
 WRF_GLOB="wrfout_d03_*"            # frames are read in filename order
 
 # LCZ map (GeoTIFF, integer classes, EPSG:4326 preferred).

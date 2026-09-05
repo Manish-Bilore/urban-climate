@@ -99,7 +99,7 @@ fi
 if ! git config user.email >/dev/null 2>&1 && ! git config --global user.email >/dev/null 2>&1; then
   echo "ABORT: git has no author identity set. Set it once, then re-run:"
   echo "    git config --global user.name  \"Manish Bilore\""
-  echo "    git config --global user.email \"you@iforest...\""
+  echo "    git config --global user.email \"you@example.com\""
   exit 1
 fi
 

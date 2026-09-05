@@ -1,14 +1,14 @@
 # PRD (lite) — Nagpur DUCT web viewer
 
 ## Problem
-The IHCAP Nagpur DUCT produces WRF → PALM-4U → CEA outputs that currently live
+The Nagpur DUCT produces WRF → PALM-4U → CEA outputs that currently live
 in NetCDF/CSV and static plots. Reviewers and planners can't explore them
 spatially or over time. We need a shareable web viewer, modelled on the
 Singapore-ETH reference twin (urbandt.org), that makes the urban heat-island
 signal legible and grows as each model stage lands.
 
 ## Users
-- **Milestone reviewers** (Dr. Sati, IHCAP) — sanity-check spatial/temporal
+- **Milestone reviewers** — sanity-check spatial/temporal
   behaviour of the current run.
 - **Planners / stakeholders** — see where heat concentrates and how the built
   form relates to it.

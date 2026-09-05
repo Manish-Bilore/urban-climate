@@ -7,7 +7,7 @@ site — everything here is built to prevent that.
 ## One-time identity (if you've never set it)
 ```bash
 git config --global user.name  "Manish Bilore"
-git config --global user.email "you@iforest…"
+git config --global user.email "you@example.com"
 ```
 
 ## 1 · Audit, then commit
