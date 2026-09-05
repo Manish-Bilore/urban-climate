@@ -1,0 +1,30 @@
+# --- Never commit source datasets or build tooling -------------------------
+# The source GPKG is hundreds of MB and is an INPUT, not a deliverable.
+*.gpkg
+*.gpkg-shm
+*.gpkg-wal
+tippecanoe/
+
+# Raw intermediate from script 01
+data/buildings/*.geojsonl
+
+# Raw model output — inputs, not deliverables. Keep these outside the repo if
+# you can; this is the safety net if a run directory ends up inside it.
+wrfout_*
+wrfinput_*
+wrfbdy_*
+met_em.*
+typescript
+
+# --- Generated demo data IS committed (zero extra hosting) ------------------
+# Uncomment if you move these to R2/S3 instead:
+# data/buildings/*.pmtiles
+# data/wrf/t2/*.png
+
+# OS / editor cruft
+.DS_Store
+*.swp
+__pycache__/
+
+# Raw WRF run directory — nothing inside it belongs in the repo
+data/wrf/apr2025_96h/

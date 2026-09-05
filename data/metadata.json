@@ -1,0 +1,32 @@
+{
+  "project": "Nagpur Digital Urban Climate Twin",
+  "generated": "2026-08-25T15:36:33",
+  "layers": {
+    "buildings": {
+      "ready": true,
+      "source": "data/buildings/nagpur_buildings.pmtiles",
+      "sourceLayer": "buildings",
+      "heightField": "height",
+      "note": "run scripts/02"
+    },
+    "lcz": {
+      "ready": true,
+      "note": "run scripts/11"
+    },
+    "wrf_t2": {
+      "ready": true,
+      "note": "run scripts/10"
+    },
+    "palm4u": {
+      "ready": false,
+      "note": "awaiting model output"
+    },
+    "cea": {
+      "ready": false,
+      "note": "awaiting model output"
+    },
+    "wrf_wind": {
+      "ready": true
+    }
+  }
+}

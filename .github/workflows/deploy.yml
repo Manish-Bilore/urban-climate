@@ -1,0 +1,65 @@
+name: Deploy to GitHub Pages
+
+# Publishes the static site on every push to main. Only the files the site
+# actually serves are staged into a clean dist/ first, so nothing heavy or
+# private that a checkout might contain can reach the published site or push
+# the deploy past its 10-minute timeout.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stage only the site files
+        run: |
+          mkdir -p dist
+          # code + shell
+          cp index.html LICENSE.md dist/
+          cp -r src styles dist/
+          # modelling architecture diagram (self-contained single file)
+          if [ -f architecture/index.html ]; then
+            mkdir -p dist/architecture
+            cp architecture/index.html dist/architecture/
+          fi
+          # data the viewer fetches at runtime (NOT raw model output)
+          mkdir -p dist/data
+          cp data/metadata.json data/stations.json dist/data/
+          cp -r data/boundary dist/data/
+          cp -r data/lcz dist/data/ 2>/dev/null || true
+          [ -f data/buildings/nagpur_buildings.pmtiles ] && \
+            mkdir -p dist/data/buildings && \
+            cp data/buildings/nagpur_buildings.pmtiles dist/data/buildings/
+          # WRF frame stacks + manifests, excluding any stray raw run dirs
+          if [ -d data/wrf ]; then
+            mkdir -p dist/data/wrf
+            find data/wrf -maxdepth 1 -name '*.json' -exec cp {} dist/data/wrf/ \;
+            for v in t2 rh ws; do
+              [ -d "data/wrf/$v" ] && cp -r "data/wrf/$v" dist/data/wrf/
+            done
+          fi
+          touch dist/.nojekyll
+          echo "staged $(find dist -type f | wc -l) files, $(du -sh dist | cut -f1)"
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - id: deployment
+        uses: actions/deploy-pages@v4

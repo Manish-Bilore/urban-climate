@@ -1,0 +1,12 @@
+# Python deps for the WRF / LCZ / station export scripts.
+# Install into your project env:  pip install -r requirements.txt
+# (Scripts open + concat files directly, so dask is NOT required.)
+xarray>=2024.3
+netCDF4>=1.6
+numpy>=1.26
+matplotlib>=3.8
+Pillow>=10.0
+rioxarray>=0.15
+rasterio>=1.3
+pyproj>=3.6
+pandas>=2.1

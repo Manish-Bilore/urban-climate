@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Urban Climate · Nagpur</title>
+  <meta name="description" content="Digital Urban Climate Twin for Nagpur — buildings, local climate zones, and WRF near-surface temperature." />
+
+  <!-- MapLibre GL -->
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="styles/main.css" rel="stylesheet" />
+</head>
+<body>
+  <div id="map"></div>
+
+  <!-- Left dock -->
+  <aside class="panel" aria-label="Layer controls">
+    <div class="panel-head">
+      <p class="eyebrow">iFOREST · IHCAP</p>
+      <h1>Nagpur Urban Digital Twin</h1>
+      <p>Microclimate-informed building &amp; heat exploration</p>
+    </div>
+    <div class="panel-section">
+      <p class="section-label">Layers</p>
+      <div id="layer-list"><!-- built by app.js --></div>
+    </div>
+    <div class="panel-section">
+      <p class="section-label">Chain status</p>
+      <div id="chain-status"><!-- built by app.js --></div>
+    </div>
+    <div class="panel-section">
+      <p class="section-label">Basemap</p>
+      <div id="basemap-list"><!-- built by app.js --></div>
+    </div>
+  </aside>
+
+  <!-- Run status -->
+  <div id="status-chip" aria-label="Run metadata"></div>
+
+  <!-- Legend -->
+  <div id="legend" aria-label="Legend"></div>
+
+  <!-- Timeline (signature control) -->
+  <div id="timeline" aria-label="Time controls">
+    <div class="timeline-top">
+      <span id="timeline-stamp">—</span>
+      <span id="timeline-counter"></span>
+    </div>
+    <div class="timeline-body">
+      <button id="timeline-play" aria-label="Play">
+        <svg class="icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        <svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+      </button>
+      <div class="track-wrap">
+        <canvas id="timeline-track"></canvas>
+        <div id="timeline-playhead"></div>
+        <input id="timeline-range" type="range" min="0" max="0" value="0" step="1" aria-label="Timeline scrubber" />
+      </div>
+      <div id="timeline-speed" role="group" aria-label="Playback speed">
+        <button type="button" data-speed="0.5">0.5&times;</button>
+        <button type="button" data-speed="1" class="is-active">1&times;</button>
+        <button type="button" data-speed="2">2&times;</button>
+        <button type="button" data-speed="4">4&times;</button>
+      </div>
+    </div>
+    <p class="timeline-hint">Space plays &middot; arrows step an hour &middot; shift+arrows step a day</p>
+  </div>
+
+  <!-- Station chart -->
+  <div id="station-panel" aria-label="Station comparison">
+    <div class="station-head">
+      <div>
+        <div id="station-name">Station</div>
+        <div id="station-meta"></div>
+      </div>
+      <button id="station-close" aria-label="Close">×</button>
+    </div>
+    <div id="station-now"></div>
+    <div id="station-verdict"></div>
+    <div class="station-chart-wrap"><canvas id="station-chart"></canvas></div>
+  </div>
+
+  <!-- Libraries (UMD globals: maplibregl, pmtiles, Chart) -->
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.js"></script>
+
+  <!-- App (load order matters: config → map → layers → controls → app) -->
+  <script src="src/config.js"></script>
+  <script src="src/map.js"></script>
+  <script src="src/basemaps.js"></script>
+  <script src="src/layers.js"></script>
+  <script src="src/timeline.js"></script>
+  <script src="src/legend.js"></script>
+  <script src="src/stations.js"></script>
+  <script src="src/permalink.js"></script>
+  <script src="src/app.js"></script>
+</body>
+</html>

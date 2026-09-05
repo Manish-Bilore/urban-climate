@@ -1,0 +1,1855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DUCT Modelling Architecture: WRF to Urban Physics to PALM-4U to CEA</title>
+<style>
+:root{
+  /* --- ink & paper ------------------------------------------------ */
+  --paper:#ffffff;
+  --paper-2:#f4f6f9;
+  --grid:#d9e0e9;
+  --ink:#16202c;
+  --ink-2:#43536a;
+  --ink-3:#7a8798;
+  --rule:#c3ccd8;
+
+  /* --- platform identities ---------------------------------------- */
+  --wrf:#1f4e79;      --wrf-bg:#e8f0f8;
+  --geo:#3f6b4f;      --geo-bg:#e9f2ec;
+  --palm:#8a5a12;     --palm-bg:#faf1e2;
+  --cea:#5b3f80;      --cea-bg:#f1ecf8;
+  --data:#5a6779;     --data-bg:#eceff4;
+  --assess:#0f5f66;   --assess-bg:#e5f2f2;
+
+  /* --- semantic edges --------------------------------------------- */
+  --e-primary:#243447;
+  --e-dynamic:#0d6d8c;
+  --e-static:#6a7789;
+  --e-derived:#8a6d1f;
+  --e-valid:#8a2f4f;
+  --e-feedback:#b34a1f;
+
+  /* --- urban physics ladder (increasing building detail) ---------- */
+  --u1:#4a7fb5; --u1-bg:#eaf2fa;
+  --u2:#b06a1e; --u2-bg:#fbf0e2;
+  --u3:#8f3a12; --u3-bg:#faeae2;
+
+  --gate:#8a2f4f; --gate-bg:#fbeef2;
+
+  --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:"Segoe UI",Inter,system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;font-family:var(--sans);color:var(--ink);
+  background:var(--paper);overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ===================================================================
+   CHROME
+=================================================================== */
+header{
+  position:relative;z-index:40;
+  display:flex;align-items:center;gap:22px;flex-wrap:wrap;
+  padding:10px 18px;
+  background:#fbfcfd;
+  border-bottom:1px solid var(--rule);
+  box-shadow:0 1px 0 rgba(22,32,44,.04);
+}
+.brand{display:flex;flex-direction:column;line-height:1.15;padding-right:18px;border-right:1px solid var(--rule)}
+.brand .t{font-size:14px;font-weight:700;letter-spacing:.2px}
+.brand .s{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);letter-spacing:.02em;margin-top:3px}
+
+.ctl{display:flex;align-items:center;gap:6px}
+.ctl > .lab{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--ink-3);margin-right:2px;
+}
+button.b{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;
+  padding:5px 10px;border:1px solid var(--rule);border-radius:3px;
+  background:#fff;color:var(--ink-2);cursor:pointer;transition:.12s;
+}
+button.b:hover{border-color:var(--ink-3);color:var(--ink)}
+button.b.on{background:var(--ink);border-color:var(--ink);color:#fff}
+button.b:focus-visible{outline:2px solid var(--e-dynamic);outline-offset:2px}
+
+label.chk{
+  display:inline-flex;align-items:center;gap:5px;cursor:pointer;
+  font-family:var(--mono);font-size:10.5px;color:var(--ink-2);
+  padding:3px 7px 3px 4px;border:1px solid transparent;border-radius:3px;
+}
+label.chk:hover{border-color:var(--rule);background:#fff}
+label.chk input{accent-color:var(--ink);margin:0}
+label.chk .sw{width:9px;height:9px;border-radius:2px;display:inline-block}
+
+/* ===================================================================
+   STAGE
+=================================================================== */
+#stage{
+  position:absolute;inset:0;top:0;overflow:hidden;cursor:grab;
+  background:#fff;
+}
+#stage.drag{cursor:grabbing}
+#world{position:absolute;transform-origin:0 0;will-change:transform}
+#edges{position:absolute;left:0;top:0;overflow:visible;z-index:2;pointer-events:none}
+#nodes{position:absolute;left:0;top:0;z-index:3}
+#frames{position:absolute;left:0;top:0;z-index:1}
+
+/* ===================================================================
+   FRAMES (platform bubbles / bands)
+=================================================================== */
+.frame{
+  position:absolute;border-radius:20px;border:2px solid;
+  background:#fff;
+}
+.frame .ftitle{
+  position:absolute;top:14px;left:20px;
+  font-family:var(--mono);font-size:14px;font-weight:700;
+  letter-spacing:.14em;text-transform:uppercase;
+}
+.frame .fsub{
+  position:absolute;top:36px;left:22px;
+  font-size:11.8px;color:var(--ink-3);letter-spacing:.01em;
+}
+.frame.sub{border-style:dashed;border-width:1.5px;border-radius:14px;background:transparent}
+.frame.sub .ftitle{font-size:11.2px;top:10px;left:16px;letter-spacing:.16em;opacity:.85}
+
+.f-wrf{border-color:var(--wrf);background:var(--wrf-bg)}
+.f-wrf .ftitle{color:var(--wrf)}
+.f-wps{border-color:#8fa9c4}.f-wps .ftitle{color:#4d6f92}
+.f-geo{border-color:var(--geo);background:var(--geo-bg)}
+.f-geo .ftitle{color:var(--geo)}
+.f-palm{border-color:var(--palm);background:var(--palm-bg)}
+.f-palm .ftitle{color:var(--palm)}
+.f-cea{border-color:var(--cea);background:var(--cea-bg)}
+.f-cea .ftitle{color:var(--cea)}
+.f-assess{border-color:var(--assess);background:var(--assess-bg)}
+.f-assess .ftitle{color:var(--assess)}
+.f-data{border-color:#aab4c2;background:var(--data-bg);border-radius:14px}
+.f-data .ftitle{color:var(--data);font-size:11.2px;letter-spacing:.15em}
+
+/* ===================================================================
+   NODES
+=================================================================== */
+.n{
+  position:absolute;background:#fff;border:1.5px solid var(--ink-3);
+  border-radius:10px;padding:13px 14px 14px;
+  box-shadow:0 1px 2px rgba(22,32,44,.06),0 6px 14px rgba(22,32,44,.05);
+  cursor:pointer;transition:box-shadow .15s,transform .15s,opacity .18s;
+}
+.n:hover{box-shadow:0 2px 4px rgba(22,32,44,.09),0 12px 26px rgba(22,32,44,.12);transform:translateY(-1px)}
+.n .badge{
+  display:inline-block;font-family:var(--mono);font-size:9.5px;font-weight:700;
+  letter-spacing:.12em;text-transform:uppercase;
+  padding:2px 6px;border-radius:2px;margin-bottom:8px;
+  background:#eef1f5;color:var(--ink-2);
+}
+.n h3{margin:0 0 8px;font-size:15.1px;line-height:1.25;letter-spacing:-.01em}
+.n h3 code{font-family:var(--mono);font-size:14px;letter-spacing:-.02em}
+.n ul{margin:0;padding-left:16px;font-size:12.1px;line-height:1.5;color:var(--ink-2)}
+.n li{margin-bottom:1px}
+.n .tag{
+  margin-top:9px;font-family:var(--mono);font-size:10px;color:var(--ink-3);
+  letter-spacing:.03em;border-top:1px dotted var(--rule);padding-top:6px;
+}
+
+/* status pip */
+.n .pip{position:absolute;top:11px;right:11px;width:9px;height:9px;border-radius:50%;border:1px solid rgba(0,0,0,.18)}
+.pip.done{background:#3f8a5a}.pip.active{background:#d9a520}
+.pip.blocked{background:#c0392b}.pip.planned{background:#fff}
+
+/* node kinds */
+.k-ds{border-color:#8d99a9;background:#f6f8fa;border-style:dashed}
+.k-ds .badge{background:#e5e9ef;color:#54637a}
+.k-dd{border-color:#3f8ba3;background:#eaf5f8}
+.k-dd .badge{background:#d5eaf1;color:#0d6d8c}
+.k-proc{border-color:#5c85ae;background:#fff}
+.k-proc .badge{background:#e2ecf6;color:#1f4e79}
+.k-model{border-color:#2f6b45;background:#f0f7f2}
+.k-model .badge{background:#dcecdf;color:#2f6b45}
+.k-u1{border-color:var(--u1);background:var(--u1-bg)}
+.k-u1 .badge{background:#d9e7f5;color:#2f5f8f}
+.k-u2{border-color:var(--u2);background:var(--u2-bg);border-width:2px}
+.k-u2 .badge{background:#f2e2c9;color:#8a5210}
+.k-u3{border-color:var(--u3);background:var(--u3-bg);border-width:2.5px}
+.k-u3 .badge{background:#f3ddd2;color:var(--u3)}
+.k-out{border-color:#6b4b9a;background:#f3eefb}
+.k-out .badge{background:#e6dcf5;color:#5b3f80}
+.k-ref{border-color:#a8697f;background:#fbf2f5;border-style:dashed}
+.k-ref .badge{background:#f2dde4;color:var(--e-valid)}
+.k-calib{border-color:var(--e-feedback);background:#fdf0e9}
+.k-calib .badge{background:#f7ddcd;color:var(--e-feedback)}
+.k-assess{border-color:var(--assess);background:#eaf5f5}
+.k-assess .badge{background:#d5eaea;color:var(--assess)}
+
+/* convergence node : the visual thesis of the diagram */
+.k-conv{
+  border:none;background:transparent;box-shadow:none;padding:0;
+}
+.k-conv .cwrap{
+  position:relative;height:100%;border-radius:12px;padding:15px 16px;
+  background:#fffdf7;
+  border:2.5px solid var(--palm);
+  box-shadow:0 0 0 4px rgba(138,90,18,.10),0 0 0 9px rgba(138,90,18,.05),
+             0 10px 26px rgba(22,32,44,.14);
+}
+.k-conv .badge{background:#f1e2c6;color:var(--palm)}
+.k-conv h3{font-size:16.2px}
+.k-cea-conv .cwrap{
+  background:#fdfbff;border-color:var(--cea);
+  box-shadow:0 0 0 4px rgba(91,63,128,.10),0 0 0 9px rgba(91,63,128,.05),
+             0 10px 26px rgba(22,32,44,.14);
+}
+.k-cea-conv .badge{background:#e6dcf5;color:var(--cea)}
+
+/* gates */
+.k-gate{
+  background:transparent;border:none;box-shadow:none;padding:0;
+  filter:drop-shadow(0 5px 12px rgba(138,47,79,.18));
+}
+.k-gate:hover{transform:translateY(-1px)}
+.k-gate .dia{
+  position:absolute;inset:0;background:var(--gate);
+  clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%);
+}
+.k-gate .dia-in{
+  position:absolute;inset:2.5px;background:var(--gate-bg);
+  clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;padding:0 38px;
+}
+.k-gate .gk{font-family:var(--mono);font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--gate);opacity:.8}
+.k-gate .gt{font-size:14px;font-weight:700;line-height:1.2;margin:5px 0 4px}
+.k-gate .gm{font-family:var(--mono);font-size:10.1px;color:var(--ink-2);line-height:1.4}
+.k-gate .gasp{
+  margin-top:5px;font-size:9.5px;font-family:var(--mono);
+  color:var(--gate);letter-spacing:.06em;text-transform:uppercase;opacity:.75;
+}
+
+/* pinned focus : survives mouse-out until another click */
+.n.pin{box-shadow:0 0 0 2.5px var(--ink),0 0 0 6.5px rgba(13,109,140,.30),
+       0 12px 28px rgba(22,32,44,.18)!important}
+.k-gate.pin{filter:drop-shadow(0 0 4px rgba(13,109,140,.75)) drop-shadow(0 5px 12px rgba(138,47,79,.4))}
+.k-gate.pin .dia{background:var(--ink)}
+.k-conv.pin{box-shadow:none!important}
+.k-conv.pin .cwrap{box-shadow:0 0 0 2.5px var(--ink),0 0 0 6.5px rgba(13,109,140,.30),
+       0 12px 30px rgba(22,32,44,.2)}
+.ed.pinned{stroke-width:3.9;opacity:1}
+
+/* dim / highlight states */
+.n.dim,.frame.dim{opacity:.13}
+.n.mute{opacity:.2}
+.n.hl{box-shadow:0 0 0 2.5px var(--ink),0 12px 26px rgba(22,32,44,.18)}
+.k-gate.hl{filter:drop-shadow(0 0 0 var(--ink)) drop-shadow(0 5px 12px rgba(138,47,79,.4))}
+.k-gate.hl .dia{background:var(--ink)}
+.k-conv.hl{box-shadow:none}
+.k-conv.hl .cwrap{box-shadow:0 0 0 2.5px var(--ink),0 12px 30px rgba(22,32,44,.2)}
+
+/* ===================================================================
+   EDGES
+=================================================================== */
+.ed{fill:none;stroke-linecap:butt;stroke-linejoin:miter;shape-rendering:geometricPrecision;transition:opacity .18s,stroke-width .15s}
+.e-primary {stroke:var(--e-primary); stroke-width:2.7}
+.e-dynamic {stroke:var(--e-dynamic); stroke-width:2.7}
+.e-static  {stroke:var(--e-static);  stroke-width:1.9; stroke-dasharray:9 6}
+.e-derived {stroke:var(--e-derived); stroke-width:1.9; stroke-dasharray:2.5 5}
+.e-valid   {stroke:var(--e-valid);   stroke-width:2.0; stroke-dasharray:11 5 2.5 5}
+.e-feedback{stroke:var(--e-feedback);stroke-width:2.1; stroke-dasharray:6 5}
+.ed.dim{opacity:.07}
+.ed.mute{opacity:.13}
+.ed.hl{stroke-width:3.9;opacity:1}
+.elab{
+  font-family:var(--mono);font-size:11px;fill:var(--ink-3);
+  paint-order:stroke;stroke:#fff;stroke-width:4px;stroke-linejoin:round;
+  transition:opacity .18s;
+}
+.elab.dim{opacity:0}.elab.mute{opacity:.15}
+.elab.hl{fill:var(--ink);font-weight:700}
+
+/* ===================================================================
+   LEGEND
+=================================================================== */
+#legend{
+  position:absolute;left:14px;bottom:14px;z-index:30;width:262px;
+  background:#fff;
+  border:1px solid var(--rule);border-radius:8px;
+  box-shadow:0 8px 26px rgba(22,32,44,.14);
+  font-size:11px;
+}
+#legend h4{
+  margin:0;padding:9px 12px;font-family:var(--mono);font-size:9.5px;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);
+  border-bottom:1px solid var(--rule);display:flex;justify-content:space-between;
+  align-items:center;cursor:pointer;user-select:none;
+}
+#legend .body{padding:10px 12px 12px;max-height:52vh;overflow:auto}
+#legend.closed .body{display:none}
+.lgroup{margin-bottom:11px}
+.lgroup:last-child{margin-bottom:0}
+.lgroup .lt{
+  font-family:var(--mono);font-size:8.5px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ink-3);margin-bottom:6px;
+}
+.lrow{display:flex;align-items:center;gap:8px;margin-bottom:4px;color:var(--ink-2);font-size:10.5px}
+.lrow svg{flex:none}
+.lchip{width:26px;height:14px;border-radius:3px;border:1.5px solid;flex:none}
+.lpip{width:9px;height:9px;border-radius:50%;border:1px solid rgba(0,0,0,.2);flex:none;margin-left:8px}
+
+/* ===================================================================
+   TOOLTIP + DRAWER
+=================================================================== */
+#tip{
+  position:fixed;z-index:60;pointer-events:none;max-width:250px;
+  background:var(--ink);color:#eef2f7;padding:7px 9px;border-radius:5px;
+  font-size:11px;line-height:1.45;opacity:0;transition:opacity .12s;
+  box-shadow:0 8px 22px rgba(0,0,0,.28);
+}
+#tip.on{opacity:1}
+#tip b{color:#fff;display:block;margin-bottom:2px;font-size:11.5px}
+
+#drawer{
+  position:absolute;top:0;right:0;bottom:0;width:352px;z-index:50;
+  background:#fbfcfd;border-left:1px solid var(--rule);
+  box-shadow:-14px 0 34px rgba(22,32,44,.12);
+  transform:translateX(100%);transition:transform .22s cubic-bezier(.4,0,.2,1);
+  display:flex;flex-direction:column;
+}
+#drawer.on{transform:none}
+#drawer .dh{padding:14px 16px 12px;border-bottom:1px solid var(--rule)}
+#drawer .dk{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+#drawer h2{margin:5px 0 0;font-size:17px;line-height:1.25}
+#drawer .dbody{padding:14px 16px 24px;overflow:auto;font-size:12.5px;line-height:1.6;color:var(--ink-2)}
+#drawer .sec{margin-top:15px}
+#drawer .sec h5{
+  margin:0 0 6px;font-family:var(--mono);font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-3);
+}
+#drawer .lst{list-style:none;margin:0;padding:0}
+#drawer .lst li{
+  padding:5px 8px;margin-bottom:4px;border-radius:4px;background:#eef1f5;
+  font-size:11.5px;cursor:pointer;border-left:3px solid var(--rule);
+}
+#drawer .lst li:hover{background:#e4e9f0}
+#drawer .lst li .w{font-family:var(--mono);font-size:8.5px;color:var(--ink-3);letter-spacing:.06em;text-transform:uppercase;display:block}
+/* provenance cards */
+#drawer .src{
+  border:1px solid var(--rule);border-radius:6px;padding:9px 10px;margin-bottom:8px;
+  background:#fff;border-left:3px solid var(--e-static);
+}
+#drawer .src .sn{font-size:12px;font-weight:700;color:var(--ink);line-height:1.35}
+#drawer .src .sp{
+  font-family:var(--mono);font-size:10px;color:var(--e-dynamic);
+  margin-top:3px;letter-spacing:.01em;
+}
+#drawer .src .ss{font-size:11px;color:var(--ink-2);margin-top:4px;line-height:1.45}
+#drawer .src .sf{
+  font-family:var(--mono);font-size:9.5px;color:var(--ink-3);margin-top:4px;
+  word-break:break-all;background:#f2f4f7;padding:3px 5px;border-radius:3px;display:inline-block;
+}
+#drawer .src .sc{
+  font-size:11px;line-height:1.45;margin-top:6px;padding-left:8px;
+  border-left:2px solid #e0c8a8;color:#7a5a2a;
+}
+#drawer .src .sa{
+  font-size:11px;line-height:1.45;margin-top:5px;padding-left:8px;
+  border-left:2px solid #a8c0d8;color:#3d5f7d;
+}
+#drawer .st{
+  float:right;font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;
+  text-transform:uppercase;padding:2px 6px;border-radius:3px;margin-left:8px;
+  background:#eceff4;color:var(--ink-3);
+}
+.st-ok{background:#e0efe4!important;color:#2f6b45!important}
+.st-warn{background:#faeeda!important;color:#8a5210!important}
+.st-bad{background:#fbe3e0!important;color:#a83a22!important}
+
+/* benchmark table */
+#drawer table.bm{border-collapse:collapse;width:100%;font-size:11px}
+#drawer table.bm th{
+  text-align:left;font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);font-weight:400;
+  padding:0 6px 5px 0;border-bottom:1px solid var(--rule);
+}
+#drawer table.bm td{padding:6px 6px 6px 0;border-bottom:1px solid #eef1f5;vertical-align:top}
+#drawer table.bm td.v{font-family:var(--mono);white-space:nowrap;color:var(--ink);font-weight:700}
+#drawer table.bm td.c{font-family:var(--mono);white-space:nowrap;font-size:10px}
+#drawer .bsrc{font-size:10px;color:var(--ink-3);margin-top:2px;line-height:1.4}
+#drawer .bnote{font-size:10.5px;color:var(--ink-2);margin-top:3px;line-height:1.45}
+
+/* on-card provenance chip : absolutely positioned so it adds no height */
+.n .srcpin{
+  position:absolute;right:9px;bottom:7px;
+  font-family:var(--mono);font-size:9px;letter-spacing:.06em;
+  color:var(--e-dynamic);background:#e9f5f8;border:1px solid #bcdde7;
+  border-radius:10px;padding:1px 7px;line-height:1.5;pointer-events:none;
+}
+.n.k-ds .srcpin{background:#eef2f7;border-color:#c6cfda;color:#4c6070}
+
+#drawer .x{
+  position:absolute;top:12px;right:12px;border:none;background:transparent;
+  font-size:20px;line-height:1;color:var(--ink-3);cursor:pointer;padding:2px 6px;
+}
+#drawer .x:hover{color:var(--ink)}
+#focus{
+  position:absolute;right:14px;bottom:48px;z-index:22;display:none;
+  align-items:center;gap:9px;
+  font-family:var(--mono);font-size:10px;letter-spacing:.03em;
+  background:var(--ink);color:#eef2f7;border-radius:5px;padding:6px 7px 6px 10px;
+  box-shadow:0 8px 22px rgba(22,32,44,.22);
+}
+#focus.on{display:flex}
+#focus .fn{color:#fff;font-weight:700;max-width:230px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+#focus button{
+  font-family:var(--mono);font-size:10px;border:1px solid rgba(255,255,255,.3);
+  background:transparent;color:#cfd8e3;border-radius:3px;padding:2px 7px;cursor:pointer;
+}
+#focus button:hover{background:rgba(255,255,255,.14);color:#fff}
+#hint{
+  position:absolute;right:14px;bottom:14px;z-index:20;
+  font-family:var(--mono);font-size:9.5px;color:var(--ink-3);
+  background:#fff;border:1px solid var(--rule);
+  border-radius:5px;padding:6px 9px;letter-spacing:.03em;
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="t">Digital Urban Climate Twin: Modelling Architecture</div>
+    <div class="s">WRF-ARW › SLUCM › BEP/BEM › PALM-4U › CEA &nbsp;·&nbsp; data &amp; dependency tree &nbsp;·&nbsp; urban tier and microscale handoff run as parallel tracks</div>
+  </div>
+
+  <div class="ctl">
+    <span class="lab">View</span>
+    <button class="b on" data-mode="all">All</button>
+    <button class="b" data-mode="model">Modelling</button>
+    <button class="b" data-mode="data">Data flows</button>
+    <button class="b" data-mode="valid">Validation</button>
+  </div>
+
+  <div class="ctl" id="layers">
+    <span class="lab">Layers</span>
+  </div>
+
+  <div class="ctl">
+    <span class="lab">Corners</span>
+    <button class="b on" data-corner="chamfer">Chamfer</button>
+    <button class="b" data-corner="miter">Miter</button>
+    <button class="b" data-corner="round">Round</button>
+  </div>
+
+  <div class="ctl">
+    <span class="lab">View&nbsp;ctl</span>
+    <button class="b" id="zin">+</button>
+    <button class="b" id="zout">−</button>
+    <button class="b" id="fit">Fit</button>
+    <button class="b" id="reset">Reset</button>
+  </div>
+</header>
+
+<div id="stage">
+  <div id="world">
+    <div id="frames"></div>
+    <svg id="edges"></svg>
+    <div id="nodes"></div>
+  </div>
+</div>
+
+<div id="legend">
+  <h4>Legend <span id="lgt">–</span></h4>
+  <div class="body">
+    <div class="lgroup">
+      <div class="lt">Connections</div>
+      <div class="lrow"><svg width="34" height="8"><line x1="1" y1="4" x2="33" y2="4" class="ed e-primary"/></svg> Primary modelling chain</div>
+      <div class="lrow"><svg width="34" height="8"><line x1="1" y1="4" x2="33" y2="4" class="ed e-dynamic"/></svg> Dynamic atmospheric forcing</div>
+      <div class="lrow"><svg width="34" height="8"><line x1="1" y1="4" x2="33" y2="4" class="ed e-static"/></svg> Static / geographic input</div>
+      <div class="lrow"><svg width="34" height="8"><line x1="1" y1="4" x2="33" y2="4" class="ed e-derived"/></svg> Optional / derived pathway</div>
+      <div class="lrow"><svg width="34" height="8"><line x1="1" y1="4" x2="33" y2="4" class="ed e-valid"/></svg> Observation to validation gate</div>
+      <div class="lrow"><svg width="34" height="8"><line x1="1" y1="4" x2="33" y2="4" class="ed e-feedback"/></svg> Feedback / recalibration</div>
+    </div>
+    <div class="lgroup">
+      <div class="lt">Node types</div>
+      <div class="lrow"><span class="lchip" style="border-color:#8d99a9;background:#f6f8fa;border-style:dashed"></span> Static dataset</div>
+      <div class="lrow"><span class="lchip" style="border-color:#3f8ba3;background:#eaf5f8"></span> Dynamic dataset / output</div>
+      <div class="lrow"><span class="lchip" style="border-color:#5c85ae;background:#fff"></span> Process (executable / tool)</div>
+      <div class="lrow"><span class="lchip" style="border-color:#2f6b45;background:#f0f7f2"></span> Model core</div>
+      <div class="lrow"><svg width="26" height="16"><polygon points="13,1 25,8 13,15 1,8" fill="var(--gate-bg)" stroke="var(--gate)" stroke-width="1.6"/></svg> Validation gate (aspirational)</div>
+      <div class="lrow"><span class="lchip" style="border-color:var(--palm);background:#fffdf7;border-width:2.5px"></span> Convergence point</div>
+    </div>
+    <div class="lgroup">
+      <div class="lt">Urban representation ladder</div>
+      <div class="lrow"><span class="lchip" style="border-color:var(--u1);background:var(--u1-bg)"></span> Tier 1 : bulk canopy (SLUCM)</div>
+      <div class="lrow"><span class="lchip" style="border-color:var(--u2);background:var(--u2-bg);border-width:2px"></span> Tier 2 : multi-layer canyon (BEP)</div>
+      <div class="lrow"><span class="lchip" style="border-color:var(--u3);background:var(--u3-bg);border-width:2.5px"></span> Tier 3 : canyon + building energy (BEP/BEM)</div>
+      <div class="lrow" style="margin-top:5px;font-style:italic;color:var(--ink-3);line-height:1.4">Any tier that passes gate 01 can drive PALM-4U. Climbing the ladder improves the driver; it does not gate it.</div>
+    </div>
+    <div class="lgroup">
+      <div class="lt">Implementation status</div>
+      <div class="lrow"><span class="lpip done" style="margin-left:0"></span> Complete &nbsp;<span class="lpip active"></span> In progress</div>
+      <div class="lrow"><span class="lpip blocked" style="margin-left:0"></span> Blocked &nbsp;<span class="lpip planned"></span> Planned</div>
+    </div>
+  </div>
+</div>
+
+<div id="focus"><span class="fn"></span><button id="fclear">Clear</button></div>
+<div id="hint">drag to pan · scroll to zoom · hover to trace · click to pin the trace · click empty space to release</div>
+<div id="tip"></div>
+
+<aside id="drawer">
+  <div class="dh">
+    <button class="x" id="dx" aria-label="Close detail">×</button>
+    <div class="dk" id="dkind"></div>
+    <h2 id="dtitle"></h2>
+  </div>
+  <div class="dbody" id="dbody"></div>
+</aside>
+
+<script>
+/* ===================================================================
+   1. GRAPH DEFINITION
+   Coordinates are authored on a fixed 5350 x 2520 drawing sheet.
+   Everything downstream (edges, hit-testing, zoom) is derived.
+=================================================================== */
+const W = 7576, H = 3586;
+
+const FRAMES = [
+  {x:481, y:96, w:2917, h:1615, cls:'f-wrf',   t:'WRF Platform',
+   s:'Mesoscale · nested 7500 / 1500 / 300 m · pre-monsoon window'},
+  {x:526, y:162, w:1149, h:1506, cls:'f-wps sub', t:'WPS : pre-processing'},
+  {x:2535, y:131, w:864, h:1547, cls:'f-wps sub', t:'Urban physics ladder + validation'},
+  {x:481, y:1807, w:2917, h:575,  cls:'f-geo',   t:'Geospatial &amp; urban morphology processing',
+   s:'Shared static pipeline : feeds both WRF urban parameters and the PALM static driver'},
+  {x:3469, y:1095, w:1628, h:1479, cls:'f-palm',  t:'PALM-4U Platform',
+   s:'Microscale LES · 10 m · nested from WRF d03'},
+  {x:5268, y:1095, w:1487, h:1479, cls:'f-cea',   t:'CEA Platform',
+   s:'Building energy · archetype-driven demand'},
+  {x:6868, y:1095, w:651, h:1479, cls:'f-assess',t:'Integrated assessment',
+   s:'Stakeholder deliverables'},
+  /* data group boxes */
+  {x:28, y:96, w:368, h:670,  cls:'f-data', t:'Dynamic · met forcing'},
+  {x:28, y:807, w:368, h:848,  cls:'f-data', t:'Static · geophysical'},
+  {x:28, y:1711, w:368, h:1035,  cls:'f-data', t:'Static · urban &amp; GIS'},
+  {x:28, y:2806, w:368, h:662,  cls:'f-data', t:'Observations'},
+  {x:5268, y:2710, w:1487, h:411,  cls:'f-data', t:'Building &amp; energy data'}
+];
+
+/* kind to badge default */
+const NODES = [
+/* ---------- DATA: dynamic meteorological ---------- */
+{id:'d_era5', x:57,y:175,w:246,k:'dd',layers:['data'],badge:'Dynamic data',t:'ERA5 reanalysis',
+ li:['Pressure-level + surface','6-hourly, 0.25°','Lateral boundary source'],
+ tip:'Primary lateral boundary and initial condition source for the control simulation.',
+ det:'Global reanalysis providing the large-scale atmospheric state. Decoded by ungrib into WPS intermediate format. Its skill sets the ceiling on synoptic-scale agreement : errors here cannot be removed by urban physics downstream.'},
+{id:'d_gfs', x:57,y:361,w:246,k:'dd',layers:['data'],badge:'Dynamic data',t:'GFS / NCEP FNL',
+ li:['Operational analysis','Alternative forcing','Forecast-mode runs'],
+ tip:'Alternative / forecast-mode boundary forcing.',
+ det:'Used where near-real-time or forecast-mode operation is required, and as an independent forcing dataset for sensitivity testing against ERA5.'},
+{id:'d_cmip6', x:57,y:548,w:246,k:'dd',layers:['data','scenario'],badge:'Scenario forcing',t:'CMIP6 ensemble',
+ li:['SSP2-4.5 / SSP5-8.5','Delta-method uplift','Future proxy dates'],
+ tip:'Future-climate scenario forcing via delta method.',
+ det:'Multi-model deltas applied to a selected current-climate analogue date to construct future forcing. Feeds the same WPS chain, producing scenario twins of the control run for 2050 horizons.',status:'planned'},
+
+/* ---------- DATA: static geophysical ---------- */
+{id:'d_dem', x:57,y:887,w:246,k:'ds',layers:['data'],badge:'Static data',t:'DEM / terrain',
+ li:['SRTM / Copernicus DEM','Elevation, slope','Two resolutions needed'],
+ tip:'Terrain height : consumed at mesoscale by geogrid and at microscale by the static driver.',
+ det:'Terrain enters the workflow twice at very different scales: aggregated onto the WRF grid by geogrid, and resampled to the PALM microscale grid where it must be reconciled with building base heights so that no building floats or sinks.'},
+{id:'d_lulc', x:57,y:1073,w:246,k:'ds',layers:['data'],badge:'Static data',t:'Land use / land cover',
+ li:['MODIS / ESA WorldCover','Impervious fraction','Vegetation classes'],
+ tip:'Land cover classification for both surface schemes.',
+ det:'Supplies the land-surface category field. Also acts as the physical constraint check on urban fractions : building plan-area fraction cannot exceed impervious surface fraction for the same class.'},
+{id:'d_soil', x:57,y:1259,w:246,k:'ds',layers:['data'],badge:'Static data',t:'Soil &amp; moisture initialisation',
+ li:['Soil texture category','Initial soil moisture','Deep-layer temperature'],
+ tip:'Soil texture and initial soil moisture state.',
+ det:'Controls the surface Bowen ratio through evaporative resistance. Because a dry-initialised soil column suppresses latent heat and inflates sensible heat, this dataset is a leading candidate whenever a persistent dry or warm bias survives urban-physics tuning.'},
+{id:'d_veg', x:57,y:1446,w:246,k:'ds',layers:['data'],badge:'Static data',t:'Vegetation &amp; canopy',
+ li:['Green fraction / LAI','Tree canopy height','Leaf area density'],
+ tip:'Vegetation state : bulk fraction for WRF, resolved canopy for PALM.',
+ det:'Enters as a bulk green-fraction field at mesoscale, but as a resolved three-dimensional leaf area density volume at microscale. The two representations are not interchangeable and must be derived from the same source to keep the cascade consistent.'},
+
+/* ---------- DATA: static urban / GIS ---------- */
+{id:'d_lcz', x:57,y:1790,w:246,k:'ds',layers:['data','urban'],badge:'Static data',t:'Local Climate Zones',
+ li:['WUDAPT / locally refined','Class-wise urban parameters','Co-developed with partners'],
+ tip:'LCZ classification : the shared urban vocabulary of the whole cascade.',
+ det:'The LCZ map is the pivot dataset: it drives class-wise urban parameters in WRF, and constrains surface parameterisation in PALM. A locally validated map is worth more here than any physics upgrade downstream, because every urban scheme inherits its errors.'},
+{id:'d_osm', x:57,y:1976,w:246,k:'ds',layers:['data','urban'],badge:'Static data',t:'OpenStreetMap',
+ li:['Road network &amp; land use','Building outlines','Water bodies'],
+ tip:'Open vector layer for streets, buildings and urban features.',
+ det:'Provides street geometry and urban feature classes. Coverage is uneven in rapidly built areas, so OSM is used in combination with an authoritative building footprint layer rather than in place of one.'},
+{id:'d_bld', x:57,y:2163,w:246,k:'ds',layers:['data','urban','bldg'],badge:'Static data',t:'Building footprints &amp; heights',
+ li:['Footprint polygons','Height attribute','Typology / use class'],
+ tip:'Authoritative building layer : footprints, heights, typology.',
+ det:'The single dataset used by three paradigms at once: aggregated into class-mean morphology for BEP/BEM, rasterised per building for PALM, and carried as individual zone geometry into CEA. Any inconsistency between those three treatments propagates through the whole cascade.'},
+{id:'d_morph', x:57,y:2349,w:246,k:'ds',layers:['data','urban'],badge:'Derived data',t:'Urban morphology fields',
+ li:['Plan &amp; frontal area index','Height histogram','Roughness parameters'],
+ tip:'Gridded morphology aggregated from the building layer.',
+ det:'Gridded plan-area and frontal-area indices, mean height and the height distribution used by multi-layer urban schemes. Directional frontal area and height histograms are the fields most likely to break between the class-based and building-resolved paradigms.'},
+{id:'d_ah', x:57,y:2535,w:246,k:'ds',layers:['data','urban'],badge:'Static data',t:'Anthropogenic heat',
+ li:['Class-wise magnitude','Diurnal profile shape','Traffic / industry sources'],
+ tip:'Anthropogenic heat magnitude and diurnal shape per urban class.',
+ det:'Split deliberately into magnitude and shape, because they fail differently. A shared diurnal profile across all classes misrepresents continuously operating industrial areas. Note the double-counting trap: magnitudes tuned for a bulk canopy scheme must not be carried forward once a building energy model computes the release explicitly.'},
+
+/* ---------- DATA: observations ---------- */
+{id:'d_obs_met', x:57,y:2885,w:246,k:'ref',layers:['data','validation'],badge:'Observation',t:'Meteorological stations',
+ li:['Air temperature, RH','Wind speed &amp; direction','Reanalysis cross-check'],
+ tip:'Ground stations plus reanalysis used to score the mesoscale run.',
+ det:'Station records provide the point time series against which the mesoscale run is scored. Stations are matched to model cells by urban class rather than by nearest geographic point, so that an urban station is not compared against a rural cell a few hundred metres away.'},
+{id:'d_obs_urb', x:57,y:3072,w:246,k:'ref',layers:['data','validation'],badge:'Observation',t:'Urban microscale observations',
+ li:['Mobile transects','Urban AWS network','Satellite surface temperature'],
+ tip:'Street-level and satellite observations for the microscale model.',
+ det:'Point stations alone cannot validate a metre-scale model. Traverses give spatial gradients, satellite thermal imagery gives surface temperature patterns, and together they test whether the model reproduces the shape of the urban heat field rather than only its mean.'},
+{id:'d_obs_energy', x:57,y:3258,w:246,k:'ref',layers:['data','validation'],badge:'Observation',t:'Metered energy',
+ li:['Utility consumption','Peak load profiles','Sub-metered buildings'],
+ tip:'Measured consumption for energy-model validation.',
+ det:'Billing and feeder data give aggregate consumption; sub-metered buildings give the diurnal shape. Aggregate agreement with wrong shape is a common and misleading outcome for archetype-based energy models.'},
+
+/* ---------- WPS ---------- */
+{id:'p_domain', x:566,y:205,w:224,k:'proc',layers:['wrf'],badge:'WPS',t:'Domain configuration',
+ li:['Projection &amp; centre','Nest ratios','Grid spacing','Vertical levels'],status:'done',
+ tip:'namelist.wps : geometry of the nested domains.',
+ det:'Fixes projection, nest ratios and grid spacing. Two decisions made here constrain everything downstream: the model top must be high enough to contain the deep dry convective boundary layer, and the lowest mass level must sit low enough for the urban scheme selected later to resolve the canopy.'},
+{id:'p_ungrib', x:566,y:548,w:224,k:'proc',layers:['wrf'],badge:'WPS',t:'<code>ungrib.exe</code>',
+ li:['GRIB decoding','Vtable selection','Intermediate files'],status:'done',
+ tip:'Decodes GRIB forcing into WPS intermediate format.',
+ det:'Decodes the driving reanalysis or forecast fields. The Vtable determines which variables survive, so soil moisture and soil temperature availability is decided here, not later.'},
+{id:'p_geogrid', x:566,y:890,w:235,k:'proc',layers:['wrf'],badge:'WPS',t:'<code>geogrid.exe</code>',
+ li:['Terrain interpolation','Land use / soil fields','Static geography to grid'],status:'done',
+ tip:'Interpolates static geography onto the model grids.',
+ det:'Produces the geo_em files carrying terrain, land use, soil and vegetation on each nest. This is where the default land-use categorisation is written : and where it must later be replaced if a locally derived urban classification is used.'},
+{id:'p_w2w', x:963,y:1232,w:235,k:'proc',layers:['wrf','urban'],badge:'Urban ingest',t:'Urban parameter ingest',
+ li:['LCZ classes to geo_em','Class-wise urban tables','Morphology fields','AH profiles'],status:'active',
+ tip:'Writes LCZ classes and urban parameters into the static fields.',
+ det:'Injects the urban classification and its parameter tables into geo_em. Two recurring failure modes live here: category index conventions that differ between the ingest tool and the model build, and parameter switches that silently default to off, disabling anthropogenic heat for an entire experiment series without any error message.'},
+{id:'p_metgrid', x:1359,y:548,w:235,k:'proc',layers:['wrf'],badge:'WPS',t:'<code>metgrid.exe</code>',
+ li:['Horizontal interpolation','Met fields onto grid','met_em output'],status:'done',
+ tip:'Combines decoded meteorology with the static grid.',
+ det:'Horizontally interpolates the decoded meteorological fields onto the WPS grids and merges them with the static geography, including whatever urban classification was written in the preceding step.'},
+{id:'p_real', x:1756,y:548,w:235,k:'proc',layers:['wrf'],badge:'WRF',t:'<code>real.exe</code>',
+ li:['Vertical interpolation','wrfinput : initial state','wrfbdy : boundaries'],status:'done',
+ tip:'Builds initial and lateral boundary conditions.',
+ det:'Performs vertical interpolation onto the eta levels and writes the initial state and lateral boundary files. The soil moisture and temperature state of the very first timestep is set here, which is why initialisation experiments are launched at this stage rather than inside the integration.'},
+
+/* ---------- WRF core + ladder ---------- */
+{id:'p_wrfcore', x:2152,y:548,w:258,k:'model',layers:['wrf'],badge:'Model core',t:'WRF-ARW integration',
+ li:['Dynamics &amp; advection','Microphysics','PBL &amp; surface layer','Radiation','Land surface'],status:'done',
+ tip:'The mesoscale atmospheric solver and its physics suite.',
+ det:'Solves the compressible non-hydrostatic equations with the selected physics suite. Every urban option below is a surface-exchange plug-in to this core: they change how the lowest atmospheric levels are coupled to the built surface, not how the atmosphere itself is solved.'},
+
+{id:'u_slucm', x:2620,y:178,w:258,k:'u1',layers:['wrf','urban'],badge:'Tier 1 · bulk canopy',t:'WRF + SLUCM',
+ li:['Single-layer canyon','Roof / wall / road facets','Bulk canyon geometry','Prescribed anthropogenic heat','Sufficient to drive the microscale model'],status:'done',
+ tip:'Single-layer urban canopy : one bulk canyon per grid cell.',
+ det:'Represents each urban cell as one idealised canyon with three facets and a single exchange level. Cheap, robust, and the right place to establish that anthropogenic heat, urban fractions and thermal parameters behave sensibly before adding vertical structure. Its limitation is definitional: the canopy is not resolved, only parameterised.<br><br><b>This tier is sufficient to drive the microscale model.</b> A published 16-member ensemble varied the urban scheme across four levels (none, this one, and the two above it) and drove the microscale model from selected members. No configuration was uniformly best across seasons and variables. Passing the validation gate is what releases the handoff, not climbing the ladder.'},
+
+{id:'v_gate1', x:2620,y:493,w:258,h:193,k:'gate',layers:['wrf','validation'],
+ gk:'Validation gate 01',gt:'Mesoscale skill',
+ gm:'T2 · RH · wind speed<br>vs station &amp; reanalysis',
+ gmet:'RMSE ≤2 K · cRMSE ≤2 K · r ≥0.8',
+ tip:'Aspirational target : not a hard pass/fail. Bias and pattern skill are judged separately.',
+ det:'Scores the bulk-canopy run against observations. The important discipline is to separate the two error components: mean bias can be removed by tuning heat release, whereas centred RMSE and correlation measure whether the diurnal evolution is right. A version that improves only the bias has not improved the physics, and should not be used to justify moving up the ladder. Literature benchmarks from comparable urban studies are used as reference targets rather than acceptance thresholds.<br><br><b>What this gate releases.</b> It judges atmospheric skill, not urban tier. Passing it opens two independent doors : permission to climb the ladder, and permission to build the microscale dynamic driver. Neither depends on the other, so the two tracks below can proceed in parallel.'},
+
+{id:'u_bep', x:2620,y:807,w:258,k:'u2',layers:['wrf','urban'],badge:'Tier 2 · multi-layer',t:'WRF + BEP',
+ li:['Multi-layer canyon','Drag &amp; TKE in canopy','Vertical building profile','Requires resolved canopy levels'],status:'active',
+ tip:'Building Effect Parameterization : canopy distributed over several model levels.',
+ det:'Distributes momentum drag, turbulence production and radiation trapping across several atmospheric levels inside the canopy. This only works if model levels actually exist within the canopy: if the first mass level sits well above mean building height, the scheme is formally active but physically starved. Refining the vertical grid to fix this has its own cost, since it tightens the timestep across all nests.<br><br><b>Parallel track, not a prerequisite.</b> This tier improves the atmospheric state handed to the microscale model; it does not gate it. If it clears the gate with better pattern skill than the bulk-canopy run, the dynamic driver is regenerated from it and nothing else downstream changes.'},
+
+{id:'v_gate2', x:2620,y:1109,w:258,h:193,k:'gate',layers:['wrf','validation'],
+ gk:'Validation gate 02',gt:'Canopy structure',
+ gm:'Vertical profile · canopy<br>wind · nocturnal cooling',
+ gmet:'T2 bias ≤2 K, AH active',
+ tip:'Checks that added vertical structure produced real skill, not just a different bias.',
+ det:'Tests whether the multi-layer treatment improved what it is supposed to improve : canopy-layer wind, nocturnal cooling rate and the vertical structure of the urban boundary layer : before committing to the additional complexity and cost of an explicit building energy model.'},
+
+{id:'u_bepbem', x:2620,y:1410,w:258,k:'u3',layers:['wrf','urban'],badge:'Tier 3 · canyon + energy',t:'WRF + BEP/BEM',
+ li:['Multi-layer canyon (BEP)','Building energy model (BEM)','Indoor–outdoor exchange','Waste heat computed, not prescribed'],status:'planned',
+ tip:'Adds an explicit building energy model : heat release becomes a model output.',
+ det:'Couples an explicit building energy balance to the multi-layer canyon: indoor temperature, envelope conduction and cooling-system waste heat are simulated rather than prescribed. This changes the meaning of anthropogenic heat in the configuration : prescribed profiles tuned for the bulk scheme must be withdrawn, or the same release is counted twice. It is also the branch that makes WRF and CEA conceptually overlap, since both now estimate cooling energy.<br><br>One study found this tier gave the best overall microscale results among six mesoscale setups tested, which is the argument for reaching it eventually : but as an improvement to the driver, not as a gate on it.'},
+
+{id:'p_valref', x:1756,y:1437,w:258,k:'ref',layers:['wrf','validation'],badge:'Reference',t:'Mesoscale validation reference',
+ li:['Class-matched station cells','Reanalysis profiles','Humidity &amp; moisture check'],
+ tip:'The assembled comparison set for the mesoscale gates.',
+ det:'Assembles observed and reanalysis series onto model coordinates. Includes the moisture cross-check that is easy to skip: a run can pass a temperature test while holding a fraction of the observed column water vapour, which will quietly distort radiation and boundary-layer growth.'},
+{id:'p_calib', x:2152,y:1136,w:258,k:'calib',layers:['wrf','validation'],badge:'Feedback',t:'Reconfigure &amp; recalibrate',
+ li:['Soil moisture initialisation','Urban fractions &amp; geometry','Heat release magnitude','Vertical grid design'],
+ tip:'Where a failed gate is turned into the next experiment.',
+ det:'The iteration node. Discipline matters more than ambition here: change one physics axis per version so the result stays interpretable. Combining four adjustments produces a number, not a finding.'},
+
+{id:'o_wrfout', x:3016,y:807,w:258,k:'dd',layers:['wrf','palm'],badge:'Model output',t:'WRF output fields',
+ li:['Temperature &amp; humidity','Wind components','Pressure &amp; radiation','PBL and surface variables','Tier-agnostic : any gate-passing run'],status:'done',
+ tip:'The mesoscale atmospheric state : the dynamic input to everything downstream.',
+ det:'Time-varying three-dimensional atmospheric state on the innermost nest. This is the only dynamic quantity crossing the platform boundary: everything else PALM and CEA consume is static.<br><br><b>Any tier that passes the gate can supply these fields.</b> All three feed this node, and the driver tools downstream read potential temperature, wind, humidity, pressure and soil state : never the urban parameter tables or the urban physics switch. Swapping to a better tier later regenerates this file and nothing else: the static driver, the canopy work, the tooling choice and the validation set are all indifferent to which scheme produced the atmosphere.<br><br>The caveat is that the atmospheric state itself differs by tier, and that difference does propagate. It is a driver-quality question, not a dependency.'},
+
+/* ---------- Geospatial band ---------- */
+{id:'gp_terrain', x:566,y:1902,w:258,k:'proc',layers:['geo','palm'],badge:'Geoprocessing',t:'Terrain preparation',
+ li:['Resample to target grid','Smooth &amp; clip domain','Reconcile building bases'],
+ tip:'Terrain resampled and reconciled with building base heights.',
+ det:'Produces the microscale terrain surface. The reconciliation step matters: building footprints and terrain come from different sources, so base heights must be forced onto the terrain surface or the model will produce floating or buried structures at domain edges.'},
+{id:'gp_bld3d', x:991,y:1902,w:258,k:'proc',layers:['geo','palm','bldg'],badge:'Geoprocessing',t:'3D building model',
+ li:['Footprint × height extrusion','Typology attribution','Rasterise to model grid','Zone geometry export'],
+ tip:'The shared 3D building model : used by PALM and by CEA.',
+ det:'Extrudes footprints to heights and attributes typology. It then forks: a raster building volume for the microscale model, and vector zone geometry with floor areas for the energy model. Keeping both products from one source is what makes microclimate and energy results comparable.'},
+{id:'gp_lcz', x:1416,y:1902,w:258,k:'proc',layers:['geo','palm','urban'],badge:'Geoprocessing',t:'Land cover &amp; LCZ rasterisation',
+ li:['Class harmonisation','Surface type mapping','Consistency checks'],
+ tip:'Harmonises classification systems onto one surface-type grid.',
+ det:'Maps land cover and urban classes onto the surface-type codes each model expects. This is where classification vocabularies are reconciled, and where impossible combinations : such as a built fraction exceeding the impervious fraction of the same class : should be caught.'},
+{id:'gp_veg', x:1841,y:1902,w:258,k:'proc',layers:['geo','palm'],badge:'Geoprocessing',t:'Vegetation &amp; canopy volume',
+ li:['Tree crowns to 3D volume','Leaf area density','Grass / bare surface split'],
+ tip:'Builds the resolved plant canopy volume.',
+ det:'Converts tree cover into a three-dimensional leaf area density field for the resolved canopy, and separates low vegetation from bare ground. In pre-monsoon conditions the distinction between dry bare ground and impervious surface is thermally small, which affects how surfaces should be classified.'},
+{id:'gp_surf', x:2266,y:1902,w:258,k:'proc',layers:['geo','palm'],badge:'Geoprocessing',t:'Surfaces, streets &amp; water',
+ li:['Pavement types','Street geometry','Water bodies','Albedo &amp; thermal properties'],
+ tip:'Paved, street and water surfaces with their thermal properties.',
+ det:'Assigns pavement and street surface classes with albedo, emissivity and thermal admittance, and inserts water bodies. These properties dominate the microscale surface energy balance during the day.'},
+
+/* ---------- PALM ---------- */
+{id:'pa_dynamic', x:3540,y:1205,w:258,k:'dd',layers:['palm'],badge:'Dynamic driver',t:'WRF to PALM interface',
+ li:['Nest from innermost domain','Vertical &amp; horizontal interpolation','Time-varying boundaries','Initial profiles'],status:'active',
+ tip:'Converts mesoscale output into the microscale dynamic driver.',
+ det:'Interpolates the mesoscale state onto the microscale grid and writes time-dependent boundary conditions. The scale jump is large and one-way: microscale features cannot inform the parent, so any mesoscale bias is inherited wholesale. This is the concrete reason the mesoscale gate must be passed first : but it is bias and profile quality that must pass, not a particular urban tier.<br><br>Published sensitivity work puts near-surface temperature variability at roughly three kelvin from the driving conditions against a fifth of a kelvin from static-driver material parameters. The driving state outweighs everything in the static driver by more than an order of magnitude, which is why the soil-moisture work outranks every other open item.<br><br>Two mitigating findings: dense urban tiles are the least sensitive part of the domain, because the resolved urban surfaces override boundary-condition differences; and the microscale response is robust enough for scenario comparison specifically, which is the deliverable here.'},
+{id:'pa_static', x:3540,y:1615,w:258,k:'proc',layers:['palm'],badge:'Static driver',t:'Static driver builder',
+ li:['Terrain + buildings + surfaces','Vegetation volume','Soil &amp; pavement types','Grid-consistent NetCDF'],status:'blocked',
+ tip:'Assembles all static geography into the model static driver.',
+ det:'Assembles every static field into one grid-consistent file. It is unforgiving by design: coordinate shapes, fill values and class codes must agree exactly across all layers, and a single mismatch stops the build. Alternative builder tools exist and are worth keeping as a bypass route when one implementation stalls.'},
+{id:'pa_conv', x:3951,y:1369,w:297,k:'conv',layers:['palm'],badge:'Convergence',t:'PALM-4U input preparation',
+ li:['Static + dynamic driver reconciliation','Grid, projection &amp; origin alignment','Domain and nesting setup','Runtime parameter configuration'],
+ tip:'Where mesoscale forcing and static geography are reconciled into one runnable case.',
+ det:'The convergence point of the whole architecture. Nine independent data lineages : terrain, buildings, land cover, vegetation, surfaces, soil, atmospheric forcing, boundary conditions and runtime configuration : must agree on one grid, one origin and one projection. Most microscale setup effort is spent here rather than in the simulation itself.'},
+{id:'pa_core', x:4375,y:1369,w:269,k:'model',layers:['palm'],badge:'Model core',t:'PALM-4U LES',
+ li:['Large-eddy simulation','Urban surface energy balance','Radiative transfer between facets','Resolved plant canopy','Biometeorology'],status:'planned',
+ tip:'Metre-scale large-eddy simulation of the urban microclimate.',
+ det:'Resolves turbulent structures rather than parameterising them, with an explicit surface energy balance on every building facet and multiple-reflection radiative exchange between surfaces. This is what makes street-level thermal comfort a model output rather than an estimate.'},
+{id:'pa_out', x:4772,y:1369,w:235,k:'out',layers:['palm'],badge:'Model output',t:'Urban microclimate',
+ li:['Air temperature &amp; humidity','Wind at pedestrian level','Surface temperatures','Mean radiant temperature','Thermal comfort indices'],status:'planned',
+ tip:'Street-level microclimate fields.',
+ det:'Metre-scale fields of the variables that determine human thermal exposure. Mean radiant temperature and comfort indices are the outputs that distinguish this from a downscaled temperature map : they combine radiation, wind and humidity as a person experiences them.'},
+{id:'pa_valref', x:4305,y:1971,w:258,k:'ref',layers:['palm','validation'],badge:'Reference',t:'Microscale validation reference',
+ li:['Transect routes to model points','Urban AWS matching','Satellite surface temperature'],
+ tip:'Observation set assembled onto microscale coordinates.',
+ det:'Matches mobile and fixed observations to model grid points and times, and prepares satellite surface temperature for spatial comparison. Sampling matters as much as the metric: a traverse compared at the wrong time offset will look like a model error.'},
+{id:'v_palm', x:4758,y:1943,w:258,h:193,k:'gate',layers:['palm','validation'],
+ gk:'Validation gate 03',gt:'Microscale realism',
+ gm:'Street-level air temp · wind<br>· surface temperature pattern',
+ gmet:'T RMSE ≤2 K · bias ≤1.5 K',
+ tip:'Aspirational target : spatial pattern matters more than point agreement here.',
+ det:'Judges whether the model reproduces the structure of the urban heat field: shaded versus exposed contrast, canyon versus open-space differences, and the day-to-night reversal. A single well-matched station is weak evidence at this scale; getting the gradients right is the real test.'},
+{id:'pa_calib', x:3710,y:2313,w:258,k:'calib',layers:['palm','validation'],badge:'Feedback',t:'Refine microscale setup',
+ li:['Surface thermal properties','Canopy density &amp; distribution','Grid resolution / domain extent','Spin-up duration'],
+ tip:'Microscale reconfiguration loop.',
+ det:'Most microscale discrepancies trace back to the static driver rather than the solver : surface properties, canopy density, or a domain edge too close to the area of interest. Spin-up is the other frequent culprit, since an under-spun run reports the initial condition rather than the simulated state.'},
+
+/* ---------- CEA ---------- */
+{id:'ce_weather', x:5338,y:1205,w:258,k:'dd',layers:['cea'],badge:'Dynamic input',t:'Microclimate-adjusted weather',
+ li:['Hourly weather file','Urban-adjusted air temperature','Radiation &amp; wind','Per-district variation'],status:'active',
+ tip:'The weather file, corrected for the local urban microclimate.',
+ det:'Replaces a single airport-style weather file with locally adjusted conditions. This is the mechanism by which urban heat reaches the energy model: warmer nights raise cooling demand in ways a regional weather file cannot represent. Where microscale results are unavailable, mesoscale output can be used with the resolution caveat made explicit.'},
+{id:'ce_in', x:5338,y:1615,w:258,k:'cea-conv',layers:['cea','bldg'],badge:'Convergence',t:'CEA input preparation',
+ li:['Zone geometry &amp; floor area','Archetype assignment','Occupancy &amp; schedules','Envelope &amp; systems properties'],status:'active',
+ tip:'Second convergence point : geometry, archetypes, use and systems.',
+ det:'The energy-side convergence: building geometry meets typology, occupancy patterns, construction properties and system definitions. Archetype definition dominates the result : for a given geometry, two credible archetype sets can differ by more than any microclimate correction, which is why archetypes deserve their own validation rather than being treated as fixed inputs.'},
+{id:'ce_core', x:5749,y:1369,w:280,k:'model',layers:['cea'],badge:'Model core',t:'CEA demand simulation',
+ li:['Thermal network building model','Solar radiation on surfaces','Cooling &amp; heating demand','Systems &amp; supply modelling'],status:'active',
+ tip:'Building energy demand simulation across the building stock.',
+ det:'Simulates each building as a reduced-order thermal network driven by the weather file, solar gains and internal loads, then aggregates to district scale. Fast enough for whole-stock and scenario work, at the cost of resolving individual rooms.'},
+{id:'ce_out', x:6174,y:1369,w:258,k:'out',layers:['cea'],badge:'Model output',t:'Energy outputs',
+ li:['Cooling &amp; heating demand','Electricity consumption','Peak load &amp; timing','Rooftop solar potential'],status:'planned',
+ tip:'Demand, load and generation potential by building and district.',
+ det:'Demand time series per building and aggregated by district, with peak magnitude and timing, the quantity that matters most for grid planning, plus rooftop solar potential from the same geometry.'},
+{id:'ce_valref', x:6174,y:1985,w:258,k:'ref',layers:['cea','validation'],badge:'Reference',t:'Energy validation reference',
+ li:['Feeder / billing aggregates','Sub-metered diurnal shape','Seasonal load pattern'],
+ tip:'Measured consumption prepared for comparison.',
+ det:'Aligns metered data with model output in space and time. Aggregate totals and diurnal shape must be checked separately, since archetype models frequently reproduce annual totals while getting the daily profile wrong.'},
+{id:'v_cea', x:5749,y:1985,w:258,h:193,k:'gate',layers:['cea','validation'],
+ gk:'Validation gate 04',gt:'Energy plausibility',
+ gm:'Demand magnitude · load shape<br>· seasonal response',
+ gmet:'no thresholds set yet',
+ tip:'Aspirational target : total and shape are judged separately.',
+ det:'Compares simulated demand with measured consumption at whatever aggregation the data supports. Failing on shape while passing on total usually points at occupancy schedules or system control assumptions rather than at the building physics.'},
+{id:'ce_calib', x:5338,y:2313,w:258,k:'calib',layers:['cea','validation'],badge:'Feedback',t:'Refine archetypes',
+ li:['Archetype thermal properties','Occupancy &amp; setpoints','System efficiency assumptions'],
+ tip:'Archetype and schedule recalibration loop.',
+ det:'Adjusts the assumptions that carry the most uncertainty : envelope properties, setpoints, occupancy density and system efficiency. Because these are correlated, calibrating them jointly against a single aggregate target can hide compensating errors.'},
+
+/* ---------- Building & energy data ---------- */
+{id:'d_occ', x:5324,y:2792,w:258,k:'ds',layers:['data','bldg','cea'],badge:'Static data',t:'Occupancy &amp; schedules',
+ li:['Use-type profiles','Occupancy density','Setpoints &amp; operating hours'],
+ tip:'Who is in the building, when, and at what setpoint.',
+ det:'Occupancy and operating schedules set both the internal gains and the hours during which cooling is demanded. They are typically the least observed and most influential inputs in the energy chain.'},
+{id:'d_constr', x:5721,y:2792,w:258,k:'ds',layers:['data','bldg','cea'],badge:'Static data',t:'Construction &amp; materials',
+ li:['Envelope assemblies','U-values &amp; thermal mass','Glazing ratio','Construction period'],
+ tip:'Envelope properties by archetype and construction era.',
+ det:'Defines envelope conductance, thermal mass and glazing. Thermal mass governs how strongly warm nights carry into the next day, which is precisely the mechanism linking urban heat to cooling demand.'},
+{id:'d_sys', x:6117,y:2792,w:258,k:'ds',layers:['data','bldg','cea'],badge:'Static data',t:'Energy systems',
+ li:['Cooling system type &amp; COP','Ventilation strategy','Supply infrastructure'],
+ tip:'How demand is converted into consumption.',
+ det:'Converts thermal demand into electricity consumption and determines waste heat release to the street. This is the point where the energy model and a building-energy-enabled urban scheme describe the same physical process from opposite directions.'},
+
+/* ---------- Integrated assessment ---------- */
+{id:'out_climate', x:6924,y:1191,w:426,k:'assess',layers:['assess'],badge:'Outcome',t:'Urban climate &amp; exposure',
+ li:['Heat island intensity &amp; extent','Pedestrian thermal comfort','Surface temperature patterns','Population heat exposure'],
+ tip:'Climate-side outcomes.',
+ det:'Translates model fields into exposure: where heat concentrates, when it peaks, how long it persists overnight, and which populations sit inside those zones. This is the layer stakeholders actually act on.'},
+{id:'out_energy', x:6924,y:1533,w:426,k:'assess',layers:['assess'],badge:'Outcome',t:'Building energy outcomes',
+ li:['District cooling demand','Peak load magnitude &amp; timing','Rooftop solar potential','Demand under warming'],
+ tip:'Energy-side outcomes.',
+ det:'District-scale demand and peak load, plus generation potential from the same building stock : the quantities that connect urban form decisions to infrastructure planning.'},
+{id:'out_integ', x:6924,y:1875,w:426,k:'assess',layers:['assess'],badge:'Synthesis',t:'Integrated assessment',
+ li:['Climate ↔ energy feedback','Heat mitigation scenarios','Adaptation &amp; planning options','Scenario comparison','Interactive viewer &amp; milestone reporting'],
+ tip:'Where the two chains are brought together as decision support.',
+ det:'The reason for the whole cascade: cooling demand raises waste heat, waste heat raises outdoor temperature, and higher outdoor temperature raises cooling demand again. Only the coupled system can represent that loop, letting mitigation options be compared on both thermal and energy outcomes at once : and delivered through an interactive viewer rather than a static report.'}
+];
+
+/* ===================================================================
+   1b. PROVENANCE : exact datasets, providers and specs per block.
+   Sourced from the Nagpur DUCT data & benchmarks inventory.
+   n = dataset · p = provider · s = spec/vintage · f = file, path or
+   namelist key · st = status · c = caveat · a = action
+=================================================================== */
+const SOURCES = {
+
+/* ---------- dynamic meteorological forcing ---------- */
+d_era5:[
+ {n:'ERA5 pressure levels (T, U, V, Q, Z)',p:'Copernicus Climate Data Store',s:'0.25 deg, 6-hourly',
+  f:'~/WRF/ERA5_data/apr2025_96h/era5_pl.grib',st:'Complete'},
+ {n:'ERA5 single levels (SP, SST, skin T, 2 m T/Td, 10 m U/V, 4-layer soil T and moisture)',
+  p:'Copernicus Climate Data Store',s:'0.25 deg, 6-hourly',
+  f:'~/WRF/ERA5_data/apr2025_96h/era5_sl.grib',st:'Complete',
+  c:'Soil moisture coming from ERA5, might be causing the dry / cold bias in WRF.',
+  a:'Alternative soil initialisation tested in both directions; did not improve results.'},
+ {n:'ERA5 request bounding box',p:'Copernicus CDS',s:'[48, 60, 3, 107]',
+  f:'~/wrf_simulation_inputs/download_era5.py',st:'Complete',
+  c:'Enlarged after a Lambert corner-distortion failure on the Varanasi run.'},
+ {n:'Vtable.ERA-interim.pl',p:'WPS distribution',s:'variable table for ungrib',
+  f:'WPS/ungrib/Variable_Tables',st:'Complete'}],
+
+d_gfs:[
+ {n:'GFS / NCEP FNL operational analysis',p:'NCEP',s:'alternative and forecast-mode forcing',
+  st:'Not in use',c:'Not used for the April 2025 control window; ERA5 is the operational forcing.'}],
+
+d_cmip6:[
+ {n:'CMIP6 ensemble, 6 models, SSP2-4.5 and SSP5-8.5',
+  p:'Pangeo cloud catalog / NEX-GDDP-CMIP6 (AWS S3)',s:'daily, bias-corrected',
+  f:'operational pipeline',st:'Complete',
+  a:'Delta method applied to proxy dates; ask the climate team member to check results.'},
+ {n:'2050 proxy-date selection (Bhubaneswar delta method)',p:'Derived',s:'date list',
+  st:'Complete',a:'Carry the same proxy dates into the PALM scenarios.'}],
+
+/* ---------- static geophysical ---------- */
+d_dem:[
+ {n:'WPS_GEOG standard bundle : GMTED2010 topography',p:'NCAR / UCAR WRF Users Page',
+  s:'30 s to 10 m, static',f:'geog_data_path in namelist.wps',st:'Complete'},
+ {n:'SRTM 30 m',p:'USGS / NASA',s:'30 m',st:'Available',
+  c:'At 30 m it under-resolves a 10 m PALM grid.',
+  a:'Resample bilinear; check the SW corner near zero and reject negatives.'},
+ {n:'CartoDEM / ALOS PALSAR',p:'NRSC / JAXA',s:'12.5 m',st:'Available',
+  a:'Preferred alternative where SRTM resolution is limiting.'}],
+
+d_lulc:[
+ {n:'MODIS IGBP 21-category land use (in WPS_GEOG)',p:'NCAR / UCAR',s:'static',
+  f:'geog_data_path',st:'Complete',c:'The MODIS urban class is replaced by LCZ on D03.'},
+ {n:'ESA WorldCover',p:'ESA',s:'10 m',st:'Derivable',
+  a:'Base layer for the PALM land-cover crosswalk and for vegetation_type.'},
+ {n:'Sentinel-2 L2A non-vegetated fraction',p:'Copernicus / Sentinel-2',
+  s:'10 m, pre-monsoon composite',f:'not yet produced',st:'Under review',
+  c:'Physically defensible only for dry pre-monsoon conditions.',
+  a:'Produce the composite and compare against the current FRC_URB2D of 0.55.'}],
+
+d_soil:[
+ {n:'STATSGO / FAO soil texture (in WPS_GEOG)',p:'NCAR / UCAR',s:'static',
+  f:'geog_data_path',st:'Complete',
+  c:'Nagpur is black cotton soil (vertisol), poorly represented by the default classes.'},
+ {n:'ERA5 4-layer soil temperature and moisture',p:'Copernicus CDS via metgrid',s:'0.25 deg, 6-hourly',
+  f:'wrfinput_d0*',st:'Under review',
+  c:'Identified as the dominant unresolved error source. WRF domain RH max about 48% against roughly 30% at the station; MERRA-2 q 4.9 against WRF 1.6 g/kg.',
+  a:'Next physics axis : test before any BEP/BEM advancement.'},
+ {n:'ERA5-Land (alternative for PALM soil initialisation)',p:'Copernicus CDS',s:'9 km',
+  st:'Decision',c:'Inheriting the WRF soil state carries the same problem into PALM.'}],
+
+d_veg:[
+ {n:'Meta / WRI Global Canopy Height',p:'Meta and World Resources Institute, via Google Earth Engine',
+  s:'1 m canopy height raster',st:'Available',
+  c:'Known commission errors on building edges and roof structures in dense urban areas.',
+  a:'Mask by GBA building footprints before deriving canopy cover.'},
+ {n:'Sentinel-2 derived LAI for the simulation dates',p:'Copernicus / Sentinel-2',
+  s:'cloud-free scene inside 22-26 April',st:'Gap',
+  c:'Pre-monsoon: many Indian urban species are partly leafless or only flushing. An annual-maximum LAI would overstate shading and transpirative cooling.',
+  a:'Derive LAI inside the simulation window, not from an annual composite; quantify the April-to-peak NDVI ratio.'},
+ {n:'ESA WorldCover reclassified to vegetation_type',p:'ESA',s:'10 m',st:'Derivable',
+  c:'Low vegetation only : trees are handled by the plant canopy model, so do not double-count.'},
+ {n:'Individual tree inventory (position, height, crown, species)',p:'None available',
+  s:'Prague described each tree individually',st:'Gap',
+  c:'The single largest quality gap against the Prague workflow.',
+  a:'Consider a partial inventory for the AOI with VNIT; otherwise state the raster approximation.'}],
+
+/* ---------- static urban and GIS ---------- */
+d_lcz:[
+ {n:'WUDAPT LCZ map for Nagpur',p:'LCZ Generator (tile hash 43ee7d33...)',s:'100 m, overall accuracy 0.70',
+  f:'LCZ GeoTIFF',st:'Under review',
+  c:'LCZ 9 covers about 65% of D03 and there are no compact classes (LCZ 1-5). Ambazari classed as LCZ 9 likely drives its higher RMSE.',
+  a:'Run the VNIT delta-T / LST validation method on the current map and on the one Meet is developing; consider a Bhubaneswar-style refinement.'},
+ {n:'Active LCZ urban classes 3, 6, 9, 10',p:'Derived from the LCZ map',s:'4 classes on D03',
+  f:'LU_INDEX',st:'Under review',
+  c:'LCZ 10 industrial load has no separate diurnal profile in SLUCM.'}],
+
+d_osm:[
+ {n:'OpenStreetMap road network',p:'OpenStreetMap contributors',s:'buffered by road class',
+  st:'Derivable',c:'Indian road construction differs from the PALM pavement library defaults.',
+  a:'Sanity-check thermal admittance against the SLUCM road values.'},
+ {n:'OSM land use and water polygons',p:'OpenStreetMap contributors',s:'vector',
+  st:'Derivable',a:'Combined with ESA WorldCover and Sentinel-2 for the PALM land-cover crosswalk.'}],
+
+d_bld:[
+ {n:'Global Building Atlas (GBA) footprint GeoPackage',p:'Internal (GBA)',
+  s:'757,922 features, EPSG:32644, layer nagpur_buildings_typology_all_buildings',
+  f:'/media/mb/HDD/3D Model/',st:'Under review',
+  c:'Height attribution completeness not yet quantified. The DUCT viewer +2 m display offset must NOT propagate into the PALM static driver.',
+  a:'Audit the height field before static-driver use; fall back to per-LCZ heights where null.'},
+ {n:'Google Open Buildings : footprints and 2.5D heights',p:'Google Research',
+  s:'being evaluated against GBA',st:'Under review',
+  a:'Cross-check height completeness and footprint coverage against GBA.'},
+ {n:'GBA typology label to archetype crosswalk',p:'Derived from GBA attributes',
+  s:'maps to the three BBI archetypes',st:'Partial',
+  c:'PALM default building types are Central-European construction.',
+  a:'Decide whether informal settlements need a fourth archetype.'},
+ {n:'building_id',p:'GBA feature id',s:'unique contiguous integer per building',st:'Derivable',
+  c:'IDs must be contiguous and consistent with building_type.',a:'Generate during rasterisation.'}],
+
+d_morph:[
+ {n:'Building morphology grids (plan area, frontal area, height histogram)',p:'GBA-derived',
+  s:'gridded to D03',f:'pending delivery',st:'Pending',
+  c:'Required before a production BEP/BEM run.',
+  a:'Confirm delivery format and grid alignment.'},
+ {n:'FRC_URB2D = 0.55',p:'Noah-era manual tuning',s:'single domain-wide value',
+  f:'wrfinput_d03',st:'Under review',
+  c:'May be miscalibrated under Noah-MP.',
+  a:'Recalibrate against the Sentinel-2 non-vegetated fraction.'},
+ {n:'LCZ 9 geometry correction : roof / road widths 43/43 to 14/10 m',p:'Project correction',
+  s:'metres',f:'URBPARM_LCZ.TBL, LCZ 9 block',st:'Under review',
+  c:'Building fraction checked against the impervious surface constraint.',
+  a:'Reconcile building fraction with the corrected geometry once the LCZ map is validated against the new footprints.'}],
+
+d_ah:[
+ {n:'AH peak magnitudes : LCZ 3 = 140, LCZ 6 = 100, LCZ 9 = 75, LCZ 10 = about 180 W/m2',
+  p:'Project tuning; Sailor et al. for magnitude only',s:'W/m2',
+  f:'URBPARM_LCZ.TBL, AHOPTION block',st:'In use',
+  c:'The LCZ 10 value is provisional.',
+  a:'AH is exhausted as a tuning axis : do not re-tune.'},
+ {n:'AHDIUPRF diurnal profile : 19:00 LST peak, 0.40 night floor',p:'Dr. Sati specification',
+  s:'24 hourly weights, shared across all LCZ classes',f:'URBPARM_LCZ.TBL, AHDIUPRF row',
+  st:'Under review',
+  c:'SLUCM allows only one shared profile for all classes.',
+  a:'Document as a limitation; revisit under BEP/BEM. Top-down profile done, bottom-up feasibility in progress.'},
+ {n:'Building-specific AH from roof surfaces',p:'CEA 3.11.0 per-building hourly cooling load',
+  s:'for the PALM AH module',st:'Derivable',
+  c:'Requires the Cooling Singapore PALM4U_AH fork (v23.10) : version mismatch against PALM 25.10.',
+  a:'Confirm fork compatibility before committing to this path.'},
+ {n:'Ground-level point AH sources',p:'Traffic corridors and LCZ 10 industry',
+  s:'Nagpur has no district cooling system',st:'Gap',
+  c:'Substituting traffic and industry for the Singapore DCS case changes both the spatial pattern and the diurnal shape.',
+  a:'Decide whether traffic AH enters as a ground source or stays inside the WRF-level treatment.'}],
+
+/* ---------- observations ---------- */
+d_obs_met:[
+ {n:'MPCB station observations : Mahal (i=60, j=50, LCZ 3), Ram Nagar (i=40, j=51, LCZ 6), Ambazari (i=41, j=43, LCZ 9)',
+  p:'MPCB / CPCB CAAQMS',s:'15-minute T, RH, wind',f:'1e_cleaned_15min.xlsx, 08_Validation_Stations.R',
+  st:'Complete',
+  c:'Only three points and none in a compact LCZ class. Ambazari shows sensor deviation and the nearby lake may influence the reading.',
+  a:'Consider dropping Ambazari; supplement with a logger campaign before PALM validation.'},
+ {n:'MERRA-2 domain-mean comparison',p:'NASA GES DISC',s:'hourly',
+  f:'MERRA_HOURLY_BANDS_*.csv, 09_Validation_MERRA2.R',st:'Complete',
+  c:'Scale mismatch for wind : d03 is canopy-scale against synoptic. Use d02.'},
+ {n:'IMD station data',p:'India Meteorological Department (data request)',s:'hourly',
+  st:'Pending',c:'Obtained but not yet cleaned; no validation script written.',
+  a:'Clean and script : it improves the station count for PALM.'},
+ {n:'IMD upper-air / radiosonde at Nagpur',p:'IMD',s:'vertical profile',st:'Decision',
+  c:'An earlier draft recorded no radiosonde for Nagpur : that was asserted, not verified.',
+  a:'VERIFY. If it exists it is both an initial-profile source and the only vertical validation data available.'}],
+
+d_obs_urb:[
+ {n:'MODIS LST (MOD11A1)',p:'NASA LAADS DAAC',s:'1 km, twice daily',f:'not yet ingested',
+  st:'Available',c:'Overpass times do not match the 10-15 IST bias window.',
+  a:'Ingest for the spatial pattern check.'},
+ {n:'Landsat 8/9 TIRS band 10',p:'USGS EarthExplorer',s:'30 m, 16-day',f:'not yet ingested',
+  st:'Available',c:'Daytime only.',a:'Ingest for the LCZ-resolved LST check.'},
+ {n:'ECOSTRESS LST',p:'NASA ECOSTRESS',s:'70 m, diurnal',f:'not yet ingested',st:'Available',
+  c:'Irregular revisit.',a:'Best option for diurnal LST : prioritise.'},
+ {n:'Logger campaign : dense supplementary T/RH network',p:'iFOREST internal deployment',
+  s:'10-15 points proposed for the AOI',st:'Not started',
+  c:'Not yet planned or budgeted.',a:'Scope before the production PALM run.'},
+ {n:'Surface temperature validation points',p:'Handheld thermal survey',
+  s:'Prague used 139 points : 66 horizontal, 73 vertical',st:'Gap',
+  c:'Satellite LST covers horizontal surfaces only. Wall temperatures, the majority of the Prague points, are invisible from orbit.',
+  a:'A single-day handheld thermal survey of the AOI would close most of this gap cheaply.'}],
+
+d_obs_energy:[
+ {n:'Metered building energy / utility consumption',p:'No Nagpur source secured',
+  s:'feeder or billing aggregates',st:'Gap',
+  c:'No measured energy data is currently in the inventory, so CEA has no acceptance line.',
+  a:'Identify a utility data route before treating CEA output as validated.'}],
+
+/* ---------- building and energy data ---------- */
+d_occ:[
+ {n:'BBI archetype usage patterns',p:'Bhubaneswar Building Inventory workbook (template for Nagpur)',
+  s:'setpoints: residential 26 degC, office and retail 24 degC',st:'Ready',
+  c:'Electrified space 80-90% of surface. Values are the Bhubaneswar template, not yet Nagpur-specific.',
+  a:'Produce the Nagpur equivalent of this workbook.'},
+ {n:'Internal loads : appliance and lighting',p:'BBI archetypes',
+  s:'office 17 / 15, retail 30 / 28, residential 6.5 / 7.5 W/m2',st:'Ready',
+  c:'Workbook lists units as W/m2.K; should be W/m2.'}],
+
+d_constr:[
+ {n:'BBI archetype U-values',p:'Bhubaneswar Building Inventory workbook',
+  s:'roof 2.9, wall 1.8-2.7, window 5.8 W/m2.K (BAU 2025)',st:'Partial',
+  c:'The sheets give U-values only. Recovering conductivity requires assuming a layer thickness.',
+  a:'Pick thicknesses consistent with local construction and record them as an explicit assumption.'},
+ {n:'BIS SP:41 material properties',p:'Bureau of Indian Standards',s:'Indian construction materials',
+  st:'Derivable',a:'Use to decompose the BBI U-values into conductivity and heat capacity.'},
+ {n:'Window-to-wall ratio by archetype',p:'BBI archetypes',
+  s:'office 0.70, retail 0.50, residential 0.15',st:'Partial',
+  c:'Prague measured window fractions on site; these are archetype averages.',
+  a:'Spot-check a sample of Nagpur facades against the 0.15 residential figure.'},
+ {n:'Surface albedo : walls, roofs, ground',p:'No Nagpur survey exists',
+  s:'Prague ran an on-site campaign recording material AND colour',st:'Gap',
+  c:'Roof finish varies enormously (whitewash, bare RCC, metal sheet, tile) and albedo is the single most consequential surface property for daytime UHI.',
+  a:'Cheapest high-value field campaign available; pairs with the logger deployment.'}],
+
+d_sys:[
+ {n:'HVAC efficiency (COP)',p:'BBI archetypes',s:'3.13 BAU 2025; 7.52 intervention; 10 deep-cut',
+  st:'Partial',c:'Office intervention and deep-cut values are missing from the workbook.'},
+ {n:'BEM block : TARGTEMP 294.15 K, GAPTEMP 3.5 K, COP 4.0, HSEQUIP 20 W/m2, BLDAC_FRC 1.0',
+  p:'Pre-existing table values, Bhubaneswar template',f:'URBPARM_LCZ.TBL',st:'Under review',
+  c:'Every field diverges from the Bhubaneswar archetypes : setpoint 5 K low, COP 22% high, BLDAC_FRC 1.0 against 0.35.',
+  a:'Apply the BEM Reconciliation values before any production BEP/BEM run.'}],
+
+/* ---------- WRF processes ---------- */
+p_domain:[
+ {n:'Three-domain nest : D01 7.5 km / D02 1.5 km / D03 300 m',p:'Project design',
+  s:'Lambert conformal, Nagpur-centred',f:'namelist.wps, namelist.input',st:'Complete',
+  c:'The PALM AOI must sit at least 1 km inside the D03 edge.',
+  a:'Verify the buffer before dynamic-driver export.'},
+ {n:'Vertical eta levels and model top',p:'Project design',s:'level count and p_top to be confirmed',
+  f:'namelist.input &domains',st:'Complete',
+  c:'dzbot = 5 m refinement caused vertical CFL instability in v7.',
+  a:'Record the final eta stretching in the audit document.'},
+ {n:'Simulation window 22-26 April 2025 (96 h)',p:'Project design; MPCB percentile selection',
+  s:'22 April treated as spin-up, 3 days simulated',f:'scenario tag apr2025_96h',st:'Complete',
+  a:'Confirm the exact spin-up discard length used in validation.'}],
+
+p_ungrib:[{n:'Vtable.ERA-interim.pl',p:'WPS distribution',s:'controls which variables survive decoding',
+  f:'WPS/ungrib/Variable_Tables',st:'Complete',
+  c:'Soil moisture and soil temperature availability is decided here, not later.'}],
+
+p_geogrid:[{n:'WPS_GEOG standard bundle : GMTED2010, MODIS IGBP 21-cat, STATSGO/FAO soil, albedo, greenness, LST',
+  p:'NCAR / UCAR WRF Users Page',s:'30 s to 10 m, static',f:'geog_data_path in namelist.wps',
+  st:'Complete',c:'The MODIS urban class is replaced by LCZ on D03.'}],
+
+p_w2w:[
+ {n:'W2W v0.6.0 conversion',p:'WUDAPT w2w CLI',s:'41-category mode (num_land_cat = 41)',
+  f:'geo_em.d0*.nc',st:'In use',
+  c:'41-cat mode writes LU_INDEX / IVGTYP at indices 31-41 while VEGPARM.TBL defines LCZ at 51-61. This offset is the root of the BEP/BEM crash.',
+  a:'Regenerate in 61-category mode for the next iteration.'},
+ {n:'URBPARM_LCZ.TBL',p:'W2W default, project-modified',s:'per-LCZ geometry, materials, AH',
+  f:'run directory root',st:'In use',
+  c:'AHOPTION was silently 0 in all R0-R2 era runs.',
+  a:'Pre-run check: confirm AHOPTION = 1 on every launch.'},
+ {n:'VEGPARM.TBL with LCZ classes at 51-61',p:'W2W-patched',f:'run directory root',st:'In use',
+  a:'Resolved by 61-category W2W regeneration.'},
+ {n:'Road albedo 0.08 (was 0.12)',p:'Project tuning, per Dr. Ankur and Indian-context literature',
+  f:'URBPARM_LCZ.TBL, ALBRD',st:'Under review',
+  c:'Bias-only improvement; no pattern-skill gain.',
+  a:'Albedo derivation and application in WRF under study (Meet).'}],
+
+p_real:[{n:'Thompson microphysics lookup tables',p:'WRF distribution',f:'run directory root',
+  st:'In use',c:'Must be copied, not symlinked : they are read-only and WRF may rewrite them.',
+  a:'Standing pre-run check.'}],
+
+p_wrfcore:[
+ {n:'v4 baseline : YSU PBL, Noah LSM, RRTMG, Thompson, SLUCM-LCZ, AH on',p:'Project',
+  s:'sf_urban_physics = 0,0,1',f:'wrf_lcz_slucm_v4_96h',st:'In use',
+  c:'Current best run. Midday cold bias of about 5-6 degC at 10-15 IST is unresolved.',
+  a:'Frozen baseline for single-axis experiments.'},
+ {n:'v6 : Noah-MP (sf_surface_physics = 4) plus four easy fixes',p:'Project',
+  s:'single-axis change from v4',f:'wrf_lcz_slucm_v6_96h',st:'Complete',
+  c:'Gains are bias-only; cRMSE unchanged, will need to be updated after new LCZ is produced.',
+  a:'Do not promote to baseline on bias alone.'},
+ {n:'radt = 9 min, swint_opt = 1',p:'Project (v6 easy-fix)',f:'namelist.input &physics',st:'In use'}],
+
+u_slucm:[{n:'SLUCM with LCZ parameterisation',p:'WRF 4.6.1',s:'sf_urban_physics = 1',
+  f:'namelist.input',st:'In use',
+  c:'AHDIUPRF is a single shared row across all LCZ classes; only AH magnitude differs per class.'}],
+
+u_bep:[{n:'BEP : sf_urban_physics = 2',p:'WRF 4.6.1',f:'namelist.input',st:'Blocked',
+  c:'WRF 4.6.1 init-order bug with the W2W LCZ indices. The +20 offset hand-patch is diagnostic-grade only. Separately, the first mass level sits far above the roughly 6.5-7 m canopy.',
+  a:'61-category W2W regeneration, then eta grid redesign.'}],
+
+u_bepbem:[{n:'BEP+BEM : sf_urban_physics = 3',p:'WRF 4.6.1',f:'namelist.input',st:'Blocked',
+  c:'BEM computes the cooling component explicitly, so the tuned SLUCM AH magnitudes must not carry forward or the release is counted twice.',
+  a:'Apply the BEM Reconciliation values first; BEP/BEM work is diagnostic-only and focused on building material.'}],
+
+o_wrfout:[
+ {n:'Urban tier is not a prerequisite for the microscale run',
+  p:'Radovic et al. 2024, GMD 17:2901-2927',
+  s:'16-member WRF ensemble; urban parameterisation varied across four levels (none, SLUCM, BEP, BEP+BEM); 14 PALM runs driven from selected members',
+  st:'Evidence',
+  c:'No configuration was uniformly best across seasons and variables. One narrow exception runs against SLUCM: in the February inversion episode it was systematically the worst urban parameterisation. That is a winter case, not a pre-monsoon heat case.',
+  a:'Gate on skill, not on tier. Release the handoff from whichever configuration passes.'},
+ {n:'Counter-evidence : multi-layer forcing gave the best overall microscale results',
+  p:'Vogel et al. 2022, Urban Climate 46:101311',
+  s:'six mesoscale setups compared over Berlin',
+  st:'Evidence',
+  c:'Best overall for temperature, mixing ratio and wind speed came from the multi-layer urban canopy setup. The same study found one setup can win on temperature while another wins on wind, so no setup dominates outright.',
+  a:'Reach the multi-layer tier eventually, as a driver improvement rather than a gate.'},
+ {n:'Urban parameterisation signature propagates into the microscale run',
+  p:'Radovic et al. 2024',
+  s:'PBL scheme held constant across members',
+  st:'Caveat',
+  c:'Inter-member differences were largest over the urban area and had to be attributed to urban parameterisation. Those differences carried into the microscale simulation.',
+  a:'Record which tier supplied the driver in every run log.'}],
+
+/* ---------- geoprocessing ---------- */
+gp_terrain:[{n:'SRTM 30 m, or CartoDEM / ALOS PALSAR 12.5 m',p:'USGS / NRSC / JAXA',
+  s:'resampled to the PALM grid as zt',st:'Available',
+  c:'SRTM at 30 m under-resolves a 10 m grid.',
+  a:'Resample bilinear; check the SW corner near zero and reject negatives.'}],
+gp_bld3d:[{n:'GBA GeoPackage rasterised to buildings_2d / buildings_3d',p:'Internal (GBA)',
+  s:'757,922 features, EPSG:32644',f:'/media/mb/HDD/3D Model/',st:'Partial',
+  c:'Height attribution completeness unknown. The DUCT viewer +2 m display offset must NOT propagate here.',
+  a:'Audit height completeness; fall back to per-LCZ heights where null.'}],
+gp_lcz:[{n:'PIDS land-cover crosswalk : asphalt, concrete, stone setts, short grass, sand, bare soil, water',
+  p:'ESA WorldCover 10 m + OSM + Sentinel-2 composite',st:'Derivable',
+  c:'The bare-ground / sand category matters disproportionately: dry pre-monsoon bare soil behaves thermally much closer to pavement than to vegetation. Unclassified cells cause PALM to abort.',
+  a:'Build the crosswalk explicitly, enforce surface_fraction summing to 1, and keep it consistent with the Sentinel-2 non-vegetated fraction used for FRC_URB2D.'}],
+gp_veg:[
+ {n:'Canopy height model',p:'Meta / WRI Global Canopy Height, via Google Earth Engine',s:'1 m raster',
+  st:'Available',c:'Commission errors on building edges and roof structures.',
+  a:'Mask by GBA footprints first, then derive cover fraction.'},
+ {n:'lad(zlad, y, x) : leaf area density',p:'Derived from CHM + cover + LAI via a beta-type vertical profile',
+  s:'m2/m3',st:'Derivable',
+  c:'Meta/WRI supplies height, NOT density : the conversion is an explicit modelling assumption. Crown base zb = 0.3 h and peak density zm = 0.65 h are assumptions, not observations.',
+  a:'State the profile function and parameters in the methodology; sensitivity-test zb at 0.2 and 0.4 h, and the 2 m against 3 m height threshold.'}],
+gp_surf:[
+ {n:'pavement_type from OSM roads buffered by class',p:'OpenStreetMap',st:'Derivable',
+  c:'Indian road construction differs from PALM library defaults.',
+  a:'Sanity-check thermal admittance against the SLUCM road values.'},
+ {n:'water_type and water_temperature : Ambazari and Futala lakes',p:'OSM / local',st:'Partial',
+  c:'No measured lake temperature.',a:'Estimate from LST or literature and note as an assumption.'},
+ {n:'Albedo, emissivity and roughness length per material',p:'PALM material library defaults',
+  st:'Gap',
+  c:'Library values are European construction. Emissivity is low risk (0.85-0.95); albedo is not, and no Nagpur survey exists.',
+  a:'Accept defaults for v1 and document; prioritise an albedo field campaign.'}],
+
+/* ---------- PALM ---------- */
+pa_dynamic:[
+ {n:'WRF4PALM v1.0',p:'Lin et al. 2021, GMD 14:2503-2524',s:'dynamic driver from WRF output',
+  st:'Pending',a:'Confirmed choice over INIFOR.'},
+ {n:'create_dynamic_driver (Cooling Singapore toolchain)',p:'Cooling Singapore DUCT stack',
+  s:'Python, YAML-configured, extracts WRF profiles at the AOI',st:'Pending',
+  c:'Different lineage from WRF4PALM, and the toolchain the anchor-tier contact actually uses.',
+  a:'Worth asking Singapore-ETH directly; may suit the CEA-to-AH path better.'},
+ {n:'PALM-meteo 2.8',p:'GMD 19:4071, 2026',st:'Pending',a:'Fallback if WRF4PALM proves brittle.'},
+ {n:'Driving conditions dominate static-driver material parameters',
+  p:'Radovic et al. 2024 against Belda et al. 2021',
+  s:'about 3 K near-surface temperature variability from boundary conditions, against about 0.18 K from building and material parameters',
+  st:'Evidence',
+  c:'More than an order of magnitude. The current mesoscale cold and dry bias will contaminate the microscale run far more than any surface-property refinement can compensate.',
+  a:'Soil-moisture initialisation outranks every other open item on the critical path.'},
+ {n:'Dense urban tiles are the least boundary-condition-sensitive part of the domain',
+  p:'Radovic et al. 2024',st:'Evidence',
+  c:'Tiles over dense urban areas were less affected than tiles with natural surfaces, because the resolved urban surface forcing overrides the boundary-condition difference.',
+  a:'Site the area of interest in the dense core, where this effect is strongest.'},
+ {n:'Reference vertical grid for a tropical / deep boundary layer domain',
+  p:'Radovic et al. 2024, Prague configuration',
+  s:'8 x 8 km at 10 m, top at 2830 m on 162 levels; uniform 10 m to 350 m, then 1.08 stretching capped at 20 m',
+  st:'Available',
+  a:'Concrete template for the domain-top and stretching decision.'},
+ {n:'Downwelling shortwave and longwave from WRF auxiliary output',
+  p:'Radovic et al. 2024',s:'10-minute temporal resolution',st:'Not started',
+  c:'Cannot be retrofitted without re-running WRF.',
+  a:'Add to the auxhist configuration alongside the 3-D fields.'},
+ {n:'WRF auxhist 3-D output over the PALM domain plus 1 km buffer',p:'Production WRF run',
+  s:'hourly minimum, 30 min preferred',f:'namelist.input',st:'Not started',
+  c:'WRF output often does not extend to the PALM top with enough levels, forcing sparse extrapolation. Acute if the top is 3 km.',
+  a:'Add auxhist BEFORE launching the production run; count D03 levels below 3 km first.'}],
+
+pa_static:[
+ {n:'palm_csd (official, ships with PALM 25.10)',p:'PALM distribution',st:'Blocked',
+  c:'v25.04 writes lat/lon as 1-D lat(y) / lon(x) instead of 2-D lat(y,x) / lon(y,x). Fix is an explicit expand.grid or meshgrid before the NetCDF write.',
+  a:'Patch the write, or switch tool; verify with ncdump -h before every run.'},
+ {n:'GEO4PALM v1.1',p:'Lin et al. 2024, GMD 17:815-845',st:'Pending',
+  c:'Accepts vegetation height directly as plant-canopy input.',
+  a:'Leading candidate : uses GBA footprints AND takes a canopy-height raster.'},
+ {n:'LCZ4PALM (within SanDyPALM)',p:'SanDyPALM / Vogel et al. 2025',st:'Pending',
+  c:'No real tree geometry and no real footprints.',a:'Fallback only.'},
+ {n:'rPALM',p:'github : SebaStad/rPALM',st:'Pending',
+  a:'Fits the existing R pipeline; the expand.grid fix is native there.'}],
+
+pa_conv:[
+ {n:'Georeference : EPSG:32644 (UTM 44N), central meridian 81.0',p:'Project design',
+  s:'origin_x, origin_y, origin_z, origin_lat, origin_lon, origin_time',st:'Not started',
+  c:'AOI centre not yet fixed; Mahal is the leading candidate.',
+  a:'Fix the AOI and record the UTM origin.'},
+ {n:'Parent domain 6 x 6 km at 10 m',p:'Project design',
+  s:'Prague parent was 4 x 4 km at 10 m; tropical studies use 5 m or 2 m',st:'Decision',
+  c:'10 m resolves only larger buildings and the Nagpur residential stock is finer.',
+  a:'Compare compute cost of 6 x 6 km at 10 m against a smaller domain at 5 m.'},
+ {n:'Model top and vertical stretching',p:'Project design',
+  s:'tropical PALM studies use about 3000 m',st:'Not started',
+  c:'A 10 m grid with 96 levels reaches only about 960 m : far too shallow. The Nagpur pre-monsoon dry convective boundary layer routinely exceeds 3 km.',
+  a:'Set the top from WRF D03 PBLH over 22-26 April, then stretch above the canopy to reach it affordably.'},
+ {n:'Nested child domain',p:'Online self-nesting (&nesting_parameters)',
+  s:'Prague nested 1440 x 1440 m at 2 m inside a 10 m parent',st:'Not started',
+  c:'Roughly 8x the cell count per unit area.',
+  a:'Decide now : it changes the static driver you build, not just the run.'}],
+
+pa_core:[
+ {n:'PALM-4U 25.10 modules : LSM, USM (Resler et al. 2017), PCM, BIO, RTM 3.0 (Krc et al. 2021)',
+  p:'PALM distribution',st:'Not started',
+  c:'RTM sky-view-factor computation is the dominant cost driver and scales badly with domain size. PCM is inactive without a valid LAD field.',
+  a:'Set ray-tracing discretisation deliberately; adopt mrt_geom = 2 for MRT.'},
+ {n:'Synthetic Turbulence Generator',p:'PALM built-in',s:'applied at the borders every timestep',
+  st:'Not started',
+  c:'Without it, turbulence must develop over a long fetch inside the domain.',
+  a:'Enable : cheaper than enlarging the domain.'},
+ {n:'Aerosol loading / AOD',p:'MODIS MAIAC (pipeline exists from earlier project work)',st:'Available',
+  c:'Central India carries high pre-monsoon aerosol loading. RRTMG on a default background profile will over-predict clear-sky shortwave and bias surface temperature warm : which would mask the cold bias inherited from WRF rather than fix it.',
+  a:'Check what aerosol profile the PALM RRTMG uses by default before interpreting any surface-temperature result.'},
+ {n:'Surface spin-up (spinup_time, spinup_pt_mean, spinup_pt_amplitude)',p:'PALM built-in',
+  st:'Not started',
+  c:'Without it the surface energy balance is still equilibrating during the analysis window.',
+  a:'Set spinup_pt_mean from the WRF window climatology.'}],
+
+pa_valref:[{n:'Virtual measurement module (palm_cvd)',p:'PALM built-in plus a coordinate file',
+  st:'Not started',c:'Without it, validation relies on nearest-cell extraction.',
+  a:'Configure for the MPCB stations and every planned logger location. Adopt phase-based diurnal analysis : daily means hide the 10-15 IST window where the WRF bias lives.'}],
+
+/* ---------- CEA ---------- */
+ce_in:[
+ {n:'CEA 3.11.0',p:'City Energy Analyst',s:'Python 3.10 conda environment',st:'In use'},
+ {n:'Zone geometry from GBA footprints and heights',p:'Internal (GBA)',s:'EPSG:32644',st:'Partial',
+  c:'Same height-completeness caveat as the PALM static driver.'},
+ {n:'BBI archetype workbook',p:'Bhubaneswar Building Inventory (template)',
+  s:'office, commercial-retail, residential multi-res',st:'Partial',
+  c:'A Nagpur equivalent has not yet been produced; the current values are the Bhubaneswar template.',
+  a:'Kritika leads Nagpur archetype development.'}],
+
+ce_core:[{n:'PALM indoor model against external CEA',p:'Pfafferott et al. 2021',st:'Decision',
+  c:'Running both double-counts. If the PALM indoor model is off, the constant indoor temperature becomes mandatory in the static driver.',
+  a:'Decide one or the other : not both.'}]
+};
+
+/* Acceptance benchmarks. Values are project acceptance lines from the
+   inventory, with their stated basis : not thresholds invented here. */
+const BENCH = {
+ v_gate1:[
+  {m:'T2 mean bias, absolute',op:'<=',v:'0.5',u:'K',src:'Emery et al. (2001) : strict',
+   note:'The strict target. Most urban Indian studies report against the relaxed 2 K line.'},
+  {m:'T2 gross error / MGE',op:'<=',v:'2',u:'K',src:'Emery et al. (2001); Gunwani & Mohan (2017)',
+   note:'Primary acceptance metric for the project.'},
+  {m:'T2 RMSE',op:'<=',v:'2',u:'degC',src:'Gunwani & Mohan (2017)',cur:'3.27 Mahal · 3.25 Ram Nagar (v4)'},
+  {m:'T2 index of agreement',op:'>=',v:'0.6',u:'-',src:'Willmott 2012, requested by Dr. Sati'},
+  {m:'T2 correlation r',op:'>=',v:'0.8',u:'-',src:'Common practice',
+   note:'Pattern skill. v6 dropped r at all three stations : this is why v6 was not promoted.'},
+  {m:'T2 centred RMSE',op:'<=',v:'2',u:'degC',src:'Project : Dr. Sati priority metric',
+   note:'Bias-free pattern error. Bias reduction without cRMSE improvement is insufficient.'},
+  {m:'Wind speed RMSE',op:'<=',v:'2',u:'m/s',src:'Emery et al. (2001); Gunwani & Mohan (2017)',
+   cur:'1.79 : passing at d03',note:'Validate on d02 for the synoptic comparison; d03 winds are canopy-scale.'}],
+ v_gate2:[
+  {m:'T2 bias with AH active, absolute',op:'<=',v:'2',u:'degC',
+   src:'Dr. Sati : entry criterion for BEP/BEM',
+   note:'Not a hard gate. BEP/BEM work is diagnostic-only after this point and is focused on building material.'}],
+ v_palm:[
+  {m:'2 m air temperature RMSE',op:'<=',v:'2',u:'K',src:'Resler et al. (2021) Prague validation',
+   note:'The acceptance line for the microscale run.'},
+  {m:'2 m air temperature mean bias, absolute',op:'<=',v:'1.5',u:'K',src:'Vogel et al. (2022); KAUST 2024',
+   note:'PALM should outperform the driving WRF at the station. If it does not, the static driver is suspect.'},
+  {m:'Relative humidity RMSE',op:'<=',v:'10',u:'%',src:'Coupled-microclimate practice (UMCF 2025 reports 4.8%)',
+   note:'Ambitious given the upstream WRF dry bias.'},
+  {m:'Wind speed RMSE at pedestrian level',op:'<=',v:'1.5',u:'m/s',src:'Microscale CFD / LES practice'},
+  {m:'Surface temperature RMSE',op:'<=',v:'4',u:'K',src:'Resler et al. (2021)',
+   note:'Surface temperature errors are conventionally larger than air temperature.'}],
+ v_cea:[]
+};
+
+/* ---------- EDGES ----------------------------------------------- */
+const E = (from,to,type,o={})=>Object.assign({from,to,type},o);
+const EDGES = [
+  /* ---- meteorological forcing to ungrib (lane-separated) ---- */
+  E('d_era5','p_ungrib','dynamic',{fs:'r',ts:'l',lane:22,lab:'GRIB'}),
+  E('d_gfs','p_ungrib','dynamic',{fs:'r',ts:'l',lane:35}),
+  E('d_cmip6','p_ungrib','derived',{fs:'r',ts:'l',lane:47,lab:'scenario delta'}),
+
+  /* ---- static geophysical to geogrid ---- */
+  E('d_dem','p_geogrid','static',{fs:'r',ts:'l',lane:22}),
+  E('d_lulc','p_geogrid','static',{fs:'r',ts:'l',lane:32}),
+  E('d_soil','p_geogrid','static',{fs:'r',ts:'l',lane:41}),
+  E('d_veg','p_geogrid','static',{fs:'r',ts:'l',lane:51}),
+  E('d_soil','p_real','derived',{fs:'r',ts:'b',lane:60,
+      via:[[476,null],[null,1136],[1905,null]],lab:'soil moisture initialisation'}),
+
+  /* ---- urban / GIS to urban parameter ingest ---- */
+  E('d_lcz','p_w2w','static',{fs:'r',ts:'l',lane:22}),
+  E('d_morph','p_w2w','static',{fs:'r',ts:'l',lane:32}),
+  E('d_ah','p_w2w','static',{fs:'r',ts:'l',lane:41,lab:'AH tables'}),
+
+  /* ---- WPS chain ---- */
+  E('p_domain','p_ungrib','primary',{fs:'b',ts:'t'}),
+  E('p_domain','p_geogrid','primary',{fs:'r',ts:'t',via:[[923,null],[null,848],[715,null]]}),
+  E('p_geogrid','p_w2w','primary',{fs:'r',ts:'l',lab:'geo_em'}),
+  E('p_w2w','p_metgrid','primary',{fs:'r',ts:'b',lab:'geo_em + urban'}),
+  E('p_ungrib','p_metgrid','primary',{fs:'r',ts:'l',lab:'intermediate'}),
+  E('p_metgrid','p_real','primary',{fs:'r',ts:'l',lab:'met_em'}),
+  E('p_real','p_wrfcore','primary',{fs:'r',ts:'l',lab:'wrfinput / wrfbdy'}),
+
+  /* ---- urban physics ladder ---- */
+  E('p_wrfcore','u_slucm','primary',{fs:'r',ts:'l',lab:'surface coupling'}),
+  E('u_slucm','v_gate1','primary',{fs:'b',ts:'t'}),
+  E('v_gate1','u_bep','derived',{fs:'b',ts:'t',lab:'optional : physics improvement track'}),
+  E('u_bep','v_gate2','derived',{fs:'b',ts:'t'}),
+  E('v_gate2','u_bepbem','derived',{fs:'b',ts:'t',lab:'optional : adds building energy'}),
+  E('u_slucm','o_wrfout','dynamic',{fs:'r',ts:'l',lane:22,lab:'sufficient once gate 01 passes'}),
+  E('u_bep','o_wrfout','dynamic',{fs:'r',ts:'l',lane:35}),
+  E('u_bepbem','o_wrfout','dynamic',{fs:'r',ts:'l',lane:47}),
+
+  /* ---- mesoscale validation + feedback ---- */
+  E('d_obs_met','p_valref','valid',{fs:'r',ts:'l',via:[[451,null],[null,1549]]}),
+  E('p_valref','v_gate1','valid',{fs:'t',ts:'l',via:[[null,1369],[2549,null]]}),
+  E('p_valref','v_gate2','valid',{fs:'t',ts:'l',via:[[null,1352],[2565,null]]}),
+  E('v_gate1','p_calib','feedback',{fs:'l',ts:'r',lane:58,lab:'shortfall'}),
+  E('v_gate2','p_calib','feedback',{fs:'l',ts:'r',lane:35}),
+  E('p_calib','p_wrfcore','feedback',{fs:'t',ts:'b',lab:'next experiment'}),
+
+  /* ---- static data to geoprocessing band (corridor above the band) ---- */
+  E('d_dem','gp_terrain','static',{fs:'r',ts:'t',via:[[427,null],[null,1736],[729,null]]}),
+  E('d_lulc','gp_lcz','static',  {fs:'r',ts:'t',via:[[434,null],[null,1744],[1579,null]]}),
+  E('d_lulc','gp_surf','static', {fs:'r',ts:'t',lane:32,via:[[441,null],[null,1752],[2428,null]]}),
+  E('d_veg','gp_veg','static',   {fs:'r',ts:'t',via:[[448,null],[null,1761],[2004,null]]}),
+  E('d_lcz','gp_lcz','static',   {fs:'r',ts:'t',lane:32,via:[[455,null],[null,1769],[1579,null]]}),
+  E('d_osm','gp_bld3d','static', {fs:'r',ts:'t',via:[[463,null],[null,1777],[1154,null]]}),
+  E('d_osm','gp_surf','static',  {fs:'r',ts:'t',lane:32,via:[[470,null],[null,1785],[2428,null]]}),
+  E('d_bld','gp_bld3d','static', {fs:'r',ts:'t',via:[[477,null],[null,1794],[1154,null]]}),
+
+  /* ---- geoprocessing to PALM static driver (collector bus below the band) ---- */
+  E('gp_terrain','pa_static','static',{fs:'b',ts:'l',via:[[null,2450],[3410,null]]}),
+  E('gp_bld3d','pa_static','static',  {fs:'b',ts:'l',via:[[null,2461],[3421,null]]}),
+  E('gp_lcz','pa_static','static',    {fs:'b',ts:'l',via:[[null,2472],[3433,null]]}),
+  E('gp_veg','pa_static','static',    {fs:'b',ts:'l',via:[[null,2483],[3443,null]]}),
+  E('gp_surf','pa_static','static',   {fs:'b',ts:'l',via:[[null,2495],[3455,null]]}),
+
+  /* ---- PALM chain ---- */
+  E('o_wrfout','pa_dynamic','dynamic',{fs:'r',ts:'l',lab:'atmospheric forcing'}),
+  E('pa_dynamic','pa_conv','dynamic',{fs:'r',ts:'l'}),
+  E('pa_static','pa_conv','static',{fs:'r',ts:'l'}),
+  E('pa_conv','pa_core','primary',{fs:'r',ts:'l',lab:'static + dynamic driver'}),
+  E('pa_core','pa_out','primary',{fs:'r',ts:'l'}),
+  E('pa_out','v_palm','primary',{fs:'b',ts:'t'}),
+  E('d_obs_urb','pa_valref','valid',{fs:'r',ts:'b',via:[[595,null],[null,3299],[4467,null]]}),
+  E('pa_valref','v_palm','valid',{fs:'r',ts:'l'}),
+  E('v_palm','pa_calib','feedback',{fs:'l',ts:'r',via:[[null,2217],[4106,null]],lab:'shortfall'}),
+  E('pa_calib','pa_core','feedback',{fs:'t',ts:'b',via:[[null,2259],[4673,null]]}),
+
+  /* ---- into CEA ---- */
+  E('v_palm','ce_weather','primary',{fs:'r',ts:'l',lab:'accepted microclimate'}),
+  E('o_wrfout','ce_weather','derived',{fs:'r',ts:'t',lane:35,
+      via:[[3427,null],[null,876],[5197,null]],lab:'regional fallback : no street-scale detail'}),
+  E('gp_bld3d','ce_in','static',{fs:'b',ts:'l',lane:41,
+      via:[[null,3175],[5168,null]],lab:'zone geometry'}),
+  E('d_occ','ce_in','static',{fs:'t',ts:'b',via:[[null,2696],[5684,null],[null,1960],[5501,null]]}),
+  E('d_constr','ce_in','static',{fs:'t',ts:'b',via:[[null,2676],[5695,null],[null,1943],[5501,null]]}),
+  E('d_sys','ce_in','static',{fs:'t',ts:'b',via:[[null,2655],[5718,null],[null,1927],[5501,null]]}),
+
+  /* ---- CEA chain + validation ---- */
+  E('ce_weather','ce_core','dynamic',{fs:'r',ts:'l'}),
+  E('ce_in','ce_core','static',{fs:'r',ts:'l'}),
+  E('ce_core','ce_out','primary',{fs:'r',ts:'l'}),
+  E('ce_out','v_cea','primary',{fs:'b',ts:'t',via:[[null,1821],[5912,null]]}),
+  E('d_obs_energy','ce_valref','valid',{fs:'r',ts:'r',via:[[595,null],[null,3449],[6839,null]]}),
+  E('ce_valref','v_cea','valid',{fs:'l',ts:'r'}),
+  E('v_cea','ce_calib','feedback',{fs:'l',ts:'r',lab:'shortfall'}),
+  E('ce_calib','ce_in','feedback',{fs:'t',ts:'b'}),
+
+  /* ---- outcomes ---- */
+  E('pa_out','out_climate','primary',{fs:'t',ts:'l',via:[[null,1027],[6825,null]]}),
+  E('u_bepbem','out_climate','derived',{fs:'r',ts:'t',
+      via:[[3420,null],[null,985],[7193,null]],lab:'city-scale heat island'}),
+  E('ce_out','out_energy','primary',{fs:'r',ts:'l'}),
+  E('out_climate','out_integ','primary',{fs:'l',ts:'l',via:[[6894,null]]}),
+  E('out_energy','out_integ','primary',{fs:'b',ts:'t'})
+];
+
+/* ===================================================================
+   2. RENDER
+=================================================================== */
+const framesEl=document.getElementById('frames'),
+      nodesEl=document.getElementById('nodes'),
+      svg=document.getElementById('edges'),
+      world=document.getElementById('world'),
+      stage=document.getElementById('stage');
+
+world.style.width=W+'px'; world.style.height=H+'px';
+svg.setAttribute('width',W); svg.setAttribute('height',H);
+svg.setAttribute('viewBox','0 0 '+W+' '+H);
+
+FRAMES.forEach(f=>{
+  const d=document.createElement('div');
+  d.className='frame '+f.cls;
+  d.style.cssText=`left:${f.x}px;top:${f.y}px;width:${f.w}px;height:${f.h}px`;
+  d.innerHTML=`<div class="ftitle">${f.t}</div>`+(f.s?`<div class="fsub">${f.s}</div>`:'');
+  framesEl.appendChild(d);
+});
+
+const NMAP={};
+NODES.forEach(n=>{
+  NMAP[n.id]=n;
+  const d=document.createElement('div');
+  d.className='n k-'+n.k;
+  d.dataset.id=n.id;
+  d.style.cssText=`left:${n.x}px;top:${n.y}px;width:${n.w}px`+(n.h?`;height:${n.h}px`:'');
+  if(n.k==='gate'){
+    d.innerHTML=`<div class="dia"></div><div class="dia-in">
+      <div class="gk">${n.gk}</div><div class="gt">${n.gt}</div>
+      <div class="gm">${n.gm}</div><div class="gasp">${n.gmet}</div></div>`;
+  } else {
+    const sl=SOURCES[n.id];
+    const srcline = sl ? `<div class="srcpin">${sl.length} source${sl.length>1?'s':''}</div>` : '';
+    const inner=`${n.status?`<span class="pip ${n.status}"></span>`:''}
+      <span class="badge">${n.badge}</span>
+      <h3>${n.t}</h3>
+      <ul>${n.li.map(x=>'<li>'+x+'</li>').join('')}</ul>${srcline}`;
+    d.innerHTML=(n.k==='conv'||n.k==='cea-conv')?`<div class="cwrap">${inner}</div>`:inner;
+  }
+  n.el=d;
+  nodesEl.appendChild(d);
+});
+
+/* ---------- geometry helpers ---------- */
+function box(n){ return {x:n.x,y:n.y,w:n.el.offsetWidth,h:n.el.offsetHeight}; }
+function anchor(n,side){
+  const b=box(n);
+  switch(side){
+    case 'l': return {x:b.x,        y:b.y+b.h/2};
+    case 'r': return {x:b.x+b.w,    y:b.y+b.h/2};
+    case 't': return {x:b.x+b.w/2,  y:b.y};
+    default : return {x:b.x+b.w/2,  y:b.y+b.h};
+  }
+}
+const DIR={l:[-1,0],r:[1,0],t:[0,-1],b:[0,1]};
+function autoSides(a,b){
+  const ab=box(a),bb=box(b);
+  const dx=(bb.x+bb.w/2)-(ab.x+ab.w/2), dy=(bb.y+bb.h/2)-(ab.y+ab.h/2);
+  return Math.abs(dx)>Math.abs(dy)
+    ? [dx>0?'r':'l', dx>0?'l':'r']
+    : [dy>0?'b':'t', dy>0?'t':'b'];
+}
+/* Catmull-Rom to cubic bezier, for routed (waypointed) edges */
+function smooth(pts){
+  if(pts.length<3) return `M${pts[0].x},${pts[0].y} L${pts[1].x},${pts[1].y}`;
+  const p=[pts[0],...pts,pts[pts.length-1]];
+  let d=`M${pts[0].x},${pts[0].y}`;
+  for(let i=1;i<p.length-2;i++){
+    const p0=p[i-1],p1=p[i],p2=p[i+1],p3=p[i+2];
+    d+=` C${p1.x+(p2.x-p0.x)/6},${p1.y+(p2.y-p0.y)/6} `
+      +`${p2.x-(p3.x-p1.x)/6},${p2.y-(p3.y-p1.y)/6} ${p2.x},${p2.y}`;
+  }
+  return d;
+}
+const STUB=22; let CH=17, CORNER='chamfer';
+
+/* Manhattan router.
+   via entries accept null on either axis, meaning "inherit from the
+   previous point" : so corridors can be authored as pure lanes
+   without knowing rendered node heights. */
+function orthoPoints(e){
+  const a=NMAP[e.from], b=NMAP[e.to];
+  let fs=e.fs, ts=e.ts;
+  if(!fs||!ts){ const sd=autoSides(a,b); fs=fs||sd[0]; ts=ts||sd[1]; }
+  const p1=anchor(a,fs), p2=anchor(b,ts);
+  const d1=DIR[fs], d2=DIR[ts];
+  const s1=e.lane||STUB, s2=e.lane2||STUB;
+
+  const raw=[p1,{x:p1.x+d1[0]*s1, y:p1.y+d1[1]*s1}];
+  if(e.via) e.via.forEach(v=>{
+    const L=raw[raw.length-1];
+    raw.push({x: v[0]==null?L.x:v[0], y: v[1]==null?L.y:v[1]});
+  });
+  raw.push({x:p2.x+d2[0]*s2, y:p2.y+d2[1]*s2}, p2);
+
+  /* insert elbows so every segment is axis-aligned */
+  let axis = d1[0]!==0 ? 'h' : 'v';
+  const out=[raw[0]];
+  for(let i=1;i<raw.length;i++){
+    const A=out[out.length-1], B=raw[i];
+    const dx=Math.abs(A.x-B.x)<0.5, dy=Math.abs(A.y-B.y)<0.5;
+    if(dx&&dy) continue;
+    if(dx){ out.push(B); axis='v'; continue; }
+    if(dy){ out.push(B); axis='h'; continue; }
+    if(axis==='h'){ out.push({x:A.x,y:B.y}); out.push(B); axis='h'; }
+    else          { out.push({x:B.x,y:A.y}); out.push(B); axis='v'; }
+  }
+
+  /* drop collinear intermediates */
+  const fin=[out[0]];
+  for(let i=1;i<out.length-1;i++){
+    const P=fin[fin.length-1], C=out[i], N=out[i+1];
+    const col=(Math.abs(P.x-C.x)<0.5&&Math.abs(C.x-N.x)<0.5)
+            ||(Math.abs(P.y-C.y)<0.5&&Math.abs(C.y-N.y)<0.5);
+    if(!col) fin.push(C);
+  }
+  fin.push(out[out.length-1]);
+  return fin;
+}
+
+function pathFor(e){
+  const pts=orthoPoints(e);
+  if(pts.length<2) return '';
+  const r2=n=>Math.round(n*10)/10;
+  let d='M'+r2(pts[0].x)+','+r2(pts[0].y);
+  for(let i=1;i<pts.length-1;i++){
+    const P=pts[i-1], C=pts[i], N=pts[i+1];
+    const l1=Math.hypot(C.x-P.x,C.y-P.y), l2=Math.hypot(N.x-C.x,N.y-C.y);
+    const r=Math.min(CH,l1/2,l2/2);
+    if(CORNER==='miter'||r<1.5){ d+=' L'+r2(C.x)+','+r2(C.y); continue; }
+    const A={x:C.x-(C.x-P.x)/l1*r, y:C.y-(C.y-P.y)/l1*r};
+    const B={x:C.x+(N.x-C.x)/l2*r, y:C.y+(N.y-C.y)/l2*r};
+    d+=' L'+r2(A.x)+','+r2(A.y);
+    d+= CORNER==='round'
+      ? ' Q'+r2(C.x)+','+r2(C.y)+' '+r2(B.x)+','+r2(B.y)
+      : ' L'+r2(B.x)+','+r2(B.y);
+  }
+  const L=pts[pts.length-1];
+  return d+' L'+r2(L.x)+','+r2(L.y);
+}
+
+/* ---------- arrow markers ---------- */
+const COL={primary:'#243447',dynamic:'#0d6d8c',static:'#6a7789',
+           derived:'#8a6d1f',valid:'#8a2f4f',feedback:'#b34a1f'};
+const NS='http://www.w3.org/2000/svg';
+const defs=document.createElementNS(NS,'defs');
+Object.entries(COL).forEach(([k,c])=>{
+  const m=document.createElementNS(NS,'marker');
+  m.setAttribute('id','a-'+k); m.setAttribute('viewBox','0 0 10 10');
+  m.setAttribute('refX','9'); m.setAttribute('refY','5');
+  m.setAttribute('markerWidth','7.6'); m.setAttribute('markerHeight','7.6');
+  m.setAttribute('orient','auto-start-reverse');
+  const p=document.createElementNS(NS,'path');
+  p.setAttribute('d','M0,1 L10,5 L0,9 z'); p.setAttribute('fill',c);
+  m.appendChild(p); defs.appendChild(m);
+});
+svg.appendChild(defs);
+
+/* ---------- draw edges ---------- */
+const gEdges=document.createElementNS(NS,'g');
+const gLabs=document.createElementNS(NS,'g');
+svg.appendChild(gEdges); svg.appendChild(gLabs);
+
+EDGES.forEach((e,i)=>{
+  e.i=i;
+  const p=document.createElementNS(NS,'path');
+  p.setAttribute('d',pathFor(e));
+  p.setAttribute('class','ed e-'+e.type);
+  p.setAttribute('marker-end','url(#a-'+e.type+')');
+  gEdges.appendChild(p); e.el=p;
+  if(e.lab){
+    const len=p.getTotalLength();
+    const pt=p.getPointAtLength(len*0.5);
+    const t=document.createElementNS(NS,'text');
+    t.setAttribute('x',pt.x); t.setAttribute('y',pt.y-6);
+    t.setAttribute('text-anchor','middle');
+    t.setAttribute('class','elab');
+    t.textContent=e.lab;
+    gLabs.appendChild(t); e.lel=t;
+  }
+});
+
+/* ---------- adjacency ---------- */
+const OUT={},IN={};
+EDGES.forEach(e=>{ (OUT[e.from]=OUT[e.from]||[]).push(e); (IN[e.to]=IN[e.to]||[]).push(e); });
+function walk(id,map,key){
+  const seenN=new Set([id]), seenE=new Set(), q=[id];
+  while(q.length){
+    const c=q.pop();
+    (map[c]||[]).forEach(e=>{
+      if(seenE.has(e.i)) return;
+      seenE.add(e.i);
+      const nx=e[key];
+      if(!seenN.has(nx)){ seenN.add(nx); q.push(nx); }
+    });
+  }
+  return {n:seenN,e:seenE};
+}
+
+/* ===================================================================
+   3. INTERACTION : hover trace, drawer, modes, layers
+=================================================================== */
+const tip=document.getElementById('tip');
+let mode='all', hovering=null, pinned=null;
+const LAYERS=[
+  {id:'data',   label:'Data sources', c:'#8d99a9'},
+  {id:'wrf',    label:'WRF',          c:'#1f4e79'},
+  {id:'geo',    label:'Geoprocessing',c:'#3f6b4f'},
+  {id:'palm',   label:'PALM-4U',      c:'#8a5a12'},
+  {id:'cea',    label:'CEA',          c:'#5b3f80'},
+  {id:'validation',label:'Validation', c:'#8a2f4f'},
+  {id:'assess', label:'Outcomes',     c:'#0f5f66'}
+];
+const active=new Set(LAYERS.map(l=>l.id));
+const layerBar=document.getElementById('layers');
+LAYERS.forEach(l=>{
+  const lb=document.createElement('label'); lb.className='chk';
+  lb.innerHTML=`<input type="checkbox" checked data-layer="${l.id}">
+                <span class="sw" style="background:${l.c}"></span>${l.label}`;
+  layerBar.appendChild(lb);
+});
+layerBar.addEventListener('change',ev=>{
+  const id=ev.target.dataset.layer; if(!id) return;
+  ev.target.checked?active.add(id):active.delete(id);
+  apply();
+});
+
+const MODE_EDGES={
+  all:null,
+  model:new Set(['primary']),
+  data:new Set(['static','dynamic','derived']),
+  valid:new Set(['valid','feedback'])
+};
+const MODE_KINDS={
+  all:null,
+  model:new Set(['proc','model','u1','u2','u3','conv','cea-conv','out','dd','assess']),
+  data:new Set(['ds','dd','proc','conv','cea-conv','out','ref']),
+  valid:new Set(['gate','ref','calib','model','u1','u2','u3','out','dd'])
+};
+
+function nodeVisible(n){ return n.layers.some(l=>active.has(l)); }
+
+function apply(){
+  /* hover previews on top of a pinned selection; pin persists on mouse-out */
+  const focus = hovering || pinned;
+  const trace = focus ? (()=>{
+    const up=walk(focus,IN,'from'), dn=walk(focus,OUT,'to');
+    return {n:new Set([...up.n,...dn.n]), e:new Set([...up.e,...dn.e])};
+  })() : null;
+
+  const fc=document.getElementById('focus');
+  if(pinned){
+    const pn=NMAP[pinned];
+    fc.querySelector('.fn').textContent=(pn.t||pn.gt).replace(/<[^>]+>/g,'');
+    fc.classList.add('on');
+  } else fc.classList.remove('on');
+
+  NODES.forEach(n=>{
+    const el=n.el; el.classList.remove('dim','mute','hl','pin');
+    if(!nodeVisible(n)){ el.style.display='none'; return; }
+    el.style.display='';
+    if(trace){
+      if(n.id===focus) el.classList.add('hl');
+      else if(!trace.n.has(n.id)) el.classList.add('dim');
+      if(n.id===pinned) el.classList.add('pin');
+    } else if(MODE_KINDS[mode] && !MODE_KINDS[mode].has(n.k)){
+      el.classList.add('mute');
+    }
+  });
+
+  EDGES.forEach(e=>{
+    const a=NMAP[e.from], b=NMAP[e.to];
+    const vis=nodeVisible(a)&&nodeVisible(b);
+    const set=(el)=>{ if(!el) return;
+      el.classList.remove('dim','mute','hl');
+      el.style.display=vis?'':'none';
+      if(!vis) return;
+      if(trace){ trace.e.has(e.i)?el.classList.add('hl'):el.classList.add('dim'); }
+      else if(MODE_EDGES[mode] && !MODE_EDGES[mode].has(e.type)) el.classList.add('mute');
+    };
+    set(e.el); set(e.lel);
+  });
+}
+
+nodesEl.addEventListener('mouseover',ev=>{
+  const el=ev.target.closest('.n'); if(!el) return;
+  hovering=el.dataset.id; apply();
+  const n=NMAP[hovering];
+  tip.innerHTML=`<b>${(n.t||n.gt).replace(/<[^>]+>/g,'')}</b>${n.tip||''}`;
+  tip.classList.add('on');
+});
+nodesEl.addEventListener('mousemove',ev=>{
+  tip.style.left=Math.min(ev.clientX+16,innerWidth-268)+'px';
+  tip.style.top=(ev.clientY+18)+'px';
+});
+nodesEl.addEventListener('mouseout',ev=>{
+  if(ev.relatedTarget&&ev.relatedTarget.closest&&ev.relatedTarget.closest('.n')) return;
+  hovering=null; tip.classList.remove('on'); apply();
+});
+
+/* ---------- drawer ---------- */
+const drawer=document.getElementById('drawer');
+const STAT_CLS=(v='')=>{
+  const t=v.toLowerCase();
+  if(/complete|in use|ready|available/.test(t)) return 'st-ok';
+  if(/gap|blocked|not in use/.test(t))          return 'st-bad';
+  if(/review|pending|partial|decision|not started|derivable/.test(t)) return 'st-warn';
+  return '';
+};
+const esc=t=>String(t).replace(/&(?!\w+;)/g,'&amp;').replace(/</g,'&lt;');
+
+function srcCard(x){
+  return `<div class="src">
+    ${x.st?`<span class="st ${STAT_CLS(x.st)}">${esc(x.st)}</span>`:''}
+    <div class="sn">${esc(x.n)}</div>
+    <div class="sp">${esc(x.p)}</div>
+    ${x.s?`<div class="ss">${esc(x.s)}</div>`:''}
+    ${x.f?`<div class="sf">${esc(x.f)}</div>`:''}
+    ${x.c?`<div class="sc"><b>Caveat.</b> ${esc(x.c)}</div>`:''}
+    ${x.a?`<div class="sa"><b>Action.</b> ${esc(x.a)}</div>`:''}
+  </div>`;
+}
+function bmTable(rows){
+  if(!rows.length) return `<div style="font-size:11.5px;color:var(--ink-3)">
+    No acceptance thresholds are defined for this gate yet. No measured energy data is
+    currently in the inventory, so nothing can be scored against.</div>`;
+  return `<table class="bm"><thead><tr>
+      <th>Metric</th><th>Target</th><th>Current</th></tr></thead><tbody>`
+   + rows.map(r=>`<tr>
+      <td>${esc(r.m)}<div class="bsrc">${esc(r.src)}</div>
+        ${r.note?`<div class="bnote">${esc(r.note)}</div>`:''}</td>
+      <td class="v">${r.op} ${r.v}<br><span style="font-weight:400;color:var(--ink-3)">${esc(r.u)}</span></td>
+      <td class="c">${r.cur?esc(r.cur):'not yet measured'}</td></tr>`).join('')
+   + `</tbody></table>`;
+}
+
+function openNode(id){
+  const n=NMAP[id]; if(!n) return;
+  document.getElementById('dkind').textContent=
+    (n.k==='gate'?'Validation gate : aspirational target':(n.badge||''))+' · '+n.layers.join(' / ');
+  document.getElementById('dtitle').innerHTML=n.t||n.gt;
+  const ins=(IN[id]||[]), outs=(OUT[id]||[]);
+  const row=(e,dir)=>{
+    const other=NMAP[dir==='in'?e.from:e.to];
+    return `<li data-go="${other.id}"><span class="w">${e.type}${e.lab?' · '+e.lab:''}</span>${(other.t||other.gt).replace(/<[^>]+>/g,'')}</li>`;
+  };
+  const src=SOURCES[id], bm=BENCH[id];
+  document.getElementById('dbody').innerHTML=
+    `<div>${n.det||''}</div>`
+    +(bm?`<div class="sec"><h5>Acceptance benchmarks</h5>${bmTable(bm)}
+        <div style="margin-top:9px;font-size:11px;color:var(--ink-3);line-height:1.5">
+        Targets and their sources come from the project benchmark inventory. They are
+        acceptance lines for judging progress, not hard pass/fail conditions.</div></div>`:'')
+    +(src?`<div class="sec"><h5>Sources &amp; provenance : ${src.length} dataset${src.length>1?'s':''}</h5>
+        ${src.map(srcCard).join('')}</div>`:'')
+    +(ins.length?`<div class="sec"><h5>Receives from</h5><ul class="lst">${ins.map(e=>row(e,'in')).join('')}</ul></div>`:'')
+    +(outs.length?`<div class="sec"><h5>Feeds into</h5><ul class="lst">${outs.map(e=>row(e,'out')).join('')}</ul></div>`:'');
+  document.getElementById('dbody').scrollTop=0;
+  drawer.classList.add('on');
+}
+nodesEl.addEventListener('click',ev=>{
+  const el=ev.target.closest('.n'); if(!el) return;
+  const id=el.dataset.id;
+  pinned = (pinned===id) ? null : id;   /* click again to release */
+  if(pinned) openNode(id); else drawer.classList.remove('on');
+  apply();
+});
+document.getElementById('dbody').addEventListener('click',ev=>{
+  const li=ev.target.closest('[data-go]'); if(!li) return;
+  pinned=li.dataset.go;
+  openNode(li.dataset.go);
+  const n=NMAP[li.dataset.go]; centerOn(n); apply();
+});
+document.getElementById('dx').onclick=()=>drawer.classList.remove('on');
+document.getElementById('fclear').onclick=()=>{ pinned=null; drawer.classList.remove('on'); apply(); };
+
+/* ---------- modes ---------- */
+document.querySelectorAll('[data-mode]').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('[data-mode]').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); mode=b.dataset.mode; apply();
+  };
+});
+
+/* ---------- corner style ---------- */
+function redrawEdges(){
+  EDGES.forEach(e=>{
+    e.el.setAttribute('d',pathFor(e));
+    if(e.lel){
+      const L=e.el.getTotalLength(), pt=e.el.getPointAtLength(L*0.5);
+      e.lel.setAttribute('x',pt.x); e.lel.setAttribute('y',pt.y-7);
+    }
+  });
+}
+document.querySelectorAll('[data-corner]').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('[data-corner]').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    CORNER=b.dataset.corner; CH = CORNER==='round'?19:17;
+    redrawEdges();
+  };
+});
+
+/* ---------- legend collapse ---------- */
+const lg=document.getElementById('legend');
+lg.querySelector('h4').onclick=()=>{
+  lg.classList.toggle('closed');
+  document.getElementById('lgt').textContent=lg.classList.contains('closed')?'+':'–';
+};
+
+/* ===================================================================
+   4. PAN / ZOOM
+=================================================================== */
+let sc=1,tx=0,ty=0;
+function render(){ world.style.transform=`translate(${tx}px,${ty}px) scale(${sc})`; }
+function fit(){
+  const r=stage.getBoundingClientRect();
+  sc=Math.min(r.width/(W+80),r.height/(H+80));
+  tx=(r.width-W*sc)/2; ty=(r.height-H*sc)/2; render();
+}
+function centerOn(n){
+  const r=stage.getBoundingClientRect();
+  sc=Math.max(sc,0.55);
+  tx=r.width/2-(n.x+n.w/2)*sc-160; ty=r.height/2-(n.y+90)*sc; render();
+}
+function zoomAt(f,cx,cy){
+  const ns=Math.min(2.4,Math.max(0.08,sc*f));
+  tx=cx-(cx-tx)*(ns/sc); ty=cy-(cy-ty)*(ns/sc); sc=ns; render();
+}
+stage.addEventListener('wheel',ev=>{
+  ev.preventDefault();
+  const r=stage.getBoundingClientRect();
+  zoomAt(ev.deltaY<0?1.12:1/1.12, ev.clientX-r.left, ev.clientY-r.top);
+},{passive:false});
+let drag=null, downAt=null;
+stage.addEventListener('pointerdown',ev=>{
+  if(ev.target.closest('.n')||ev.target.closest('#legend')) return;
+  downAt={x:ev.clientX,y:ev.clientY};
+  drag={x:ev.clientX-tx,y:ev.clientY-ty}; stage.classList.add('drag');
+  stage.setPointerCapture(ev.pointerId);
+});
+stage.addEventListener('pointerup',ev=>{
+  if(!downAt) return;
+  const moved=Math.hypot(ev.clientX-downAt.x, ev.clientY-downAt.y);
+  downAt=null;
+  if(moved<4 && pinned && !ev.target.closest('.n')){ pinned=null; apply(); }
+});
+stage.addEventListener('pointermove',ev=>{
+  if(!drag) return; tx=ev.clientX-drag.x; ty=ev.clientY-drag.y; render();
+});
+addEventListener('pointerup',()=>{drag=null;stage.classList.remove('drag')});
+document.getElementById('zin').onclick=()=>{const r=stage.getBoundingClientRect();zoomAt(1.2,r.width/2,r.height/2)};
+document.getElementById('zout').onclick=()=>{const r=stage.getBoundingClientRect();zoomAt(1/1.2,r.width/2,r.height/2)};
+document.getElementById('fit').onclick=fit;
+document.getElementById('reset').onclick=()=>{
+  mode='all'; hovering=null; pinned=null;
+  document.querySelectorAll('[data-mode]').forEach(x=>x.classList.toggle('on',x.dataset.mode==='all'));
+  document.querySelectorAll('[data-layer]').forEach(x=>{x.checked=true;active.add(x.dataset.layer)});
+  drawer.classList.remove('on'); apply(); fit();
+};
+addEventListener('keydown',e=>{ if(e.key==='Escape'){ pinned=null; drawer.classList.remove('on'); apply(); } });
+addEventListener('resize',()=>{},{passive:true});
+
+/* ---------- go ---------- */
+requestAnimationFrame(()=>{ redrawEdges(); apply(); fit(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+{
+  "variables": [
+    {
+      "id": "t2",
+      "label": "Air temperature (2 m)",
+      "short": "Air temp",
+      "units": "\u00b0C",
+      "dir": "t2",
+      "vmin": 21.0,
+      "vmax": 40.0
+    },
+    {
+      "id": "rh",
+      "label": "Relative humidity (2 m)",
+      "short": "Humidity",
+      "units": "%",
+      "dir": "rh",
+      "vmin": 0.0,
+      "vmax": 22.0
+    },
+    {
+      "id": "ws",
+      "label": "Wind speed (10 m)",
+      "short": "Wind",
+      "units": "m s\u207b\u00b9",
+      "dir": "ws",
+      "vmin": 0.0,
+      "vmax": 7.0
+    }
+  ],
+  "default": "t2",
+  "bounds": [
+    78.93621826171875,
+    21.007583618164062,
+    79.23849487304688,
+    21.289382934570312
+  ],
+  "nframes": 97,
+  "t0": "2025-04-22T05:30:00",
+  "dt_hours": 1.0,
+  "tz_label": "IST",
+  "generated": "2026-08-25T15:36:05",
+  "wind_vectors": "wind_vectors.json"
+}
